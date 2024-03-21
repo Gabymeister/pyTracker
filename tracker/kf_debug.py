@@ -10,7 +10,6 @@ from DataTypes import *
 
 def make_hits(x, y, z, t):
     Y_LAYERS = y
-    N_LAYERS = len(y)
     
     det_width  = 4.5 # 4.5cm per bar
     det_height = 1 #[cm]
@@ -24,19 +23,12 @@ def make_hits(x, y, z, t):
     
 
     hits=[]
-    hits_truth=[]
-    for i in range(N_LAYERS):
-        dy = Y_LAYERS[i]-Y_LAYERS[0]
-        hits_truth.append(Hit(x[i], y[i], z[i], t[i] , 0, 0, 0, 0, i, i))
-        
-
+    for i in Y_LAYERS:
         if i%2==1:
             hits.append(Hit(x[i], y[i], z[i], t[i], unc_trans, 0, unc_long, UNC_T, i, i))
         else:
             hits.append(Hit(x[i], y[i], z[i], t[i], unc_long, 0, unc_trans, UNC_T, i, i))         
             
-        
-        
     return hits
 
 def gen_hits(x0=0,y0=0,z0=0, t0=0, Ax=0.3,Az=0.2,At=1/28, N_LAYERS = 8):

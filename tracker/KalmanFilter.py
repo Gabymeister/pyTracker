@@ -137,6 +137,8 @@ class KalmanFilter():
         
         self.Ndim_meas = len(m0)
         self.Ndim_stat = len(Xf0)
+        self.identity_measure = np.identity(self.Ndim_meas)
+        self.identity_state = np.identity(self.Ndim_stat)        
             
         
     # A): Forward iterations
@@ -174,11 +176,11 @@ class KalmanFilter():
         Xf = self.Xp[-1] + K@self.rp[-1]# Combination of the predicted state, measured values, covariance matrix and Kalman Gain
 
         # Filtered Covariance Matrix
-        Cf = (np.identity(self.Ndim_stat) - K@H).dot(Cp)
+        Cf = (self.identity_state - K@H).dot(Cp)
         
         # Filtered residual and residual Covariance matrix
         rf = self.m[-1] - H@Xf
-        Rf = (np.identity(self.Ndim_meas) - H@K).dot(self.V[-1])
+        Rf = (self.identity_measure - H@K).dot(self.V[-1])
         
         # Chi2 contribution
         chi2 = rf.T @ inv(Rf) @ rf
@@ -263,7 +265,7 @@ class KalmanFilter():
             # Change the smoothed state
             self.Xsm_temp = self.Xsm_temp + Kmod @ (self.m[i] - self.H[i]@self.Xsm_temp)
             # Change the smoothed Covariance
-            self.Csm_temp = (np.identity(self.Ndim_state) - Kmod @ self.H[i]) @ self.Csm_temp
+            self.Csm_temp = (self.identity_state - Kmod @ self.H[i]) @ self.Csm_temp
             self.chism_temp = 0
         
         # Insert smoothed values

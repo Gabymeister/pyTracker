@@ -12,12 +12,12 @@ import copy
 
 # ----------------------------------------------------------------------
 class TrackFinder:
-    def __init__(self, parameters=None, method="recursive"):
-        self.method = method # ("recursive", "greedy")
+    def __init__(self, parameters=None, method="recursive", debug=False):
+        self.method = method # {"recursive", "greedy"}
         self.parameters={
-            "cut_track_HitAddChi2": 10,
-            "cut_track_HitDropChi2": 10, # Set to -1 to turn off
-            "cut_track_HitProjectionSigma": 10, # Number of sigmas
+            "cut_track_HitAddChi2": 10,          # Only used when method is "greedy"
+            "cut_track_HitDropChi2": 10,         # Set to -1 to turn off
+            "cut_track_HitProjectionSigma": 10,  # Number of sigmas
             "cut_track_TrackChi2Reduced": 5,
             "cut_track_TrackNHitsMin": 3,
         }
@@ -164,6 +164,9 @@ class TrackFinder:
             FIND_BACKWARD = seed_start_layer>=LAYERS[0]
             FIND_BACKWARD_LAYERS = LAYERS[:np.argmax(LAYERS>seed_stop_layer)-1][::-1]
 
+        # print(FIND_FORWARD, FIND_FORWARD_LAYERS, FIND_BACKWARD, FIND_BACKWARD_LAYERS)
+        
+
 
         ##### Find ####
         hits_found = [seed_hits[1]]
@@ -216,16 +219,20 @@ class TrackFinder:
             Xp_unc = np.sqrt(np.diag(kf_find.Rp_i))
             # Function to test if new measurement is within N_sigma times the uncertainty ellipsoid
             N_sigma = self.parameters["cut_track_HitProjectionSigma"]
-            test_measurement_compatible = lambda x,z,t: ((x-Xp[0])/Xp_unc[0])**2 + ((z-Xp[1])/Xp_unc[1])**2 + ((t-Xp[2])/Xp_unc[2])**2 <N_sigma            
+            test_measurement_incompatible = lambda x,z,t: abs(x-Xp[0])>Xp_unc[0]*N_sigma or \
+                                                        abs(z-Xp[1])>Xp_unc[1]*N_sigma or \
+                                                        abs(t-Xp[2])>Xp_unc[2]*N_sigma or \
+                                                        ((x-Xp[0])/Xp_unc[0])**2 + ((z-Xp[1])/Xp_unc[1])**2 + ((t-Xp[2])/Xp_unc[2])**2 > N_sigma**2            
 
             # Calculate chi2 for all hits in the next layer
             # chi2_predict = [kf_find.forward_predict_chi2(np.array([mi.x, mi.z, mi.t])) for mi in hits_thislayer]
             chi2_predict=[]
             chi2_predict_inds =[]
             for imeasurement, m in enumerate(hits_thislayer):
-                if not test_measurement_compatible(m.x, m.z, m.t):
+                if test_measurement_incompatible(m.x, m.z, m.t):
                     continue
                 else:
+                # if 1:
                     chi2 = kf_find.forward_predict_chi2(np.array([m.x, m.z, m.t]))
                     chi2_predict.append(chi2)
                     chi2_predict_inds.append(imeasurement)
@@ -263,7 +270,7 @@ class TrackFinder:
             return [], 0
 
         # Find the group with minimum chi2 per hit
-        n_hits = [len(i) for i in self.found_hit_groups]
+        n_hits = [max(len(i),1) for i in self.found_hit_groups] # limit to be at least 1 to not mess up the divide in the following line
         chi2_reduced = np.sum(self.found_chi2_groups, axis=1)/n_hits
         ind_minchi2 = np.argmin(chi2_reduced)
         hits_found = [hits[i] for i in self.found_hit_groups[ind_minchi2] ]
@@ -292,12 +299,14 @@ class TrackFinder:
         Xp_unc = np.sqrt(np.diag(kf_find.Rp_i))
         # Function to test if new measurement is within N_sigma times the uncertainty ellipsoid
         N_sigma = self.parameters["cut_track_HitProjectionSigma"]
-        test_measurement_compatible = lambda x,z,t: ((x-Xp[0])/Xp_unc[0])**2 + ((z-Xp[1])/Xp_unc[1])**2 + ((t-Xp[2])/Xp_unc[2])**2 <N_sigma
-
+        test_measurement_incompatible = lambda x,z,t: abs(x-Xp[0])>Xp_unc[0]*N_sigma or \
+                                                    abs(z-Xp[1])>Xp_unc[1]*N_sigma or \
+                                                    abs(t-Xp[2])>Xp_unc[2]*N_sigma or \
+                                                    ((x-Xp[0])/Xp_unc[0])**2 + ((z-Xp[1])/Xp_unc[1])**2 + ((t-Xp[2])/Xp_unc[2])**2 > N_sigma**2   
         # calculate chi2 for all hits in the next layer
         for imeasurement, m in enumerate(hits_thislayer):
             # Limit our search to the hits close to prediction:
-            if not test_measurement_compatible(m.x, m.z, m.t):
+            if test_measurement_incompatible(m.x, m.z, m.t):
                 continue
             # print(m.x, m.z, m.t)
             # print(Xp[:3])
@@ -412,9 +421,10 @@ class TrackFinder:
 
         y0 = hits_found[0].y
         Ay = 1 # Slope of Y vs Y, which is always 1
-        hits_filtered = kalman_result.Xsm.insert(0, [x0,z0,t0])
-        # print(hits_filtered)        
+
+        hits_filtered = [[xsm[0], hit.y, xsm[1], xsm[2]] for hit,xsm in zip(hits_found[1:], kalman_result.Xsm)]
+        hits_filtered.insert(0, [x0,y0,z0,t0])
 
         # Track is a namedtuple("Track", ["x0", "y0", "z0", "t", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
-        track = DataTypes.Track(x0, y0, z0, t0, Ax, Ay, Az, At, cov, chi2, ind, hits,hits_filtered)
+        track = DataTypes.Track(x0, y0, z0, t0, Ax, Ay, Az, At, cov, chi2, ind, hits, hits_filtered)
         return track
