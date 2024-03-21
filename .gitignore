@@ -1,0 +1,6 @@
+**/__pycache__/
+**/*.pyc
+
+# IPython
+profile_default/
+ipython_config.py
