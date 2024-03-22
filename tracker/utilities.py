@@ -3,7 +3,6 @@ from collections import namedtuple
 import numpy as np
 from numpy.linalg import inv
 import scipy as sp
-from iminuit import Minuit
 import iminuit
 
 
@@ -222,7 +221,157 @@ class track:
         for ihit in range(len(hits)):
             hit = hits[ihit]
             HitsLayerGrouped[hit.layer].append(hit)
-        return HitsLayerGrouped   
+        return HitsLayerGrouped  
+
+    @staticmethod
+    def chi2_point_track(point, track, point_unc=None):
+        """ 
+        Calculate the chi-squre distance between 
+        a 4-D point [x,y,z,t] and a track parameterized by [x0, y0, z0, t0, Ax, Az, At]
+        where Ax = dx/dy, Az = dz/dy, At = dt/dy
+
+        INPUT:
+        ---
+        point: list
+            [x,y,z,t]
+        track: namedtuple
+            namedtuple("Track", ["x0", "y0", "z0", "t0", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
+        point_unc: 1d-list or 2d-list or None
+            [x_err,y_err,z_err,t_err]
+        
+        RETURN:
+        ---
+        chi2: float
+            chi-square distance between the point and the track
+
+        TEST:
+        ```
+        track1 = datatypes.Track(0,0,0, 0, 1,1,0,1, np.diag(np.ones(6)), 0,0,0,0)
+        track2 = datatypes.Track(0,0,1, 0, -1,1,0,1, np.diag(np.ones(6)), 0,0,0,0)
+        midpoint,dist = Util.track.closest_approach_midpoint_Track(track1, track2)
+        chi2_point_track(midpoint, track2)
+
+        0.25
+        ```
+        """
+        x,y,z,t = point
+        dy =  y - track.y0
+
+        # Residual
+        track_x = track.x0 + track.Ax*dy
+        track_z = track.z0 + track.Az*dy
+        track_t = track.t0 + track.At*dy  
+        residual = np.array([track_x-x, track_z-z, track_t-t])
+
+        # Covariance
+        jac=np.array([[ 	1,  0,	0,  dy,   0,    0],
+                        [ 	0,  1,  0,   0,  dy,    0],
+                        [	0,  0, 	1,   0,   0,    dy]])
+        covariance = jac @ track.cov @ jac.T
+
+        # Add the uncertainty of the point
+        if point_unc is not None:
+            if np.array(point_unc)==1:
+                x_err,y_err,z_err,t_err = point_unc
+                covariance += np.diag(np.array([x_err, z_err, t_err])**2)
+            elif np.array(point_unc)==2:
+                covariance += point_unc
+
+        chi2 = residual.T @ np.linalg.inv(covariance) @ residual
+
+        return chi2    
+
+
+    @staticmethod
+    def closest_approach_midpoint(tr1, tr2):
+        """
+        INPUT:
+        ---
+        tr1,tr2: list
+            ["x0", "y0", "z0", "vx", "vy", "vz", "t"])
+            
+        return:
+        ---
+        midpoint([x,y,z,t]), distance
+
+        Test
+        ```
+        tr1 = np.array([0,0,0, 1, 0, 0, 0])
+        tr2 = np.array([0,0,1, 0, 1, 0, 0])
+        Util.track.closest_approach_midpoint(tr1,tr2)
+        return: (array([0. , 0. , 0.5, 0. ]), 1.0)
+        """
+        
+
+        rel_v = tr2[3:6] - tr1[3:6]
+        rel_v2 = np.dot(rel_v, rel_v) 
+
+        # Find the time at midpoint
+        displacement = tr1[:3] - tr2[:3]; # position difference
+        t_ca = (  np.dot(displacement, rel_v) + np.dot((tr2[3:6]*tr2[6] - tr1[3:6]*tr1[6]), rel_v)  )/rel_v2    
+
+        pos1 = tr1[:3] + tr1[3:6]*(t_ca - tr1[6])
+        pos2 = tr2[:3] + tr2[3:6]*(t_ca - tr2[6])
+        midpoint = (pos1 + pos2)*(0.5)
+        midpoint = np.append(midpoint, t_ca)
+        
+        distance = np.linalg.norm((pos1- pos2))
+        return midpoint, distance
+
+    @staticmethod
+    def closest_approach_midpoint_Track(track1, track2):
+        """
+        INPUT:
+        ---
+        track1,track2: namedtuple
+            namedtuple("Track", ["x0", "y0", "z0", "t0", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
+            
+        return:
+        ---
+        midpoint([x,y,z,t]), distance
+        """
+        tr1 = np.array([track1.x0, track1.y0, track1.z0, track1.Ax/track1.At, track1.Ay/track1.At, track1.Az/track1.At, track1.t0])
+        tr2 = np.array([track2.x0, track2.y0, track2.z0, track2.Ax/track2.At, track2.Ay/track2.At, track2.Az/track2.At, track2.t0])
+
+        return track.closest_approach_midpoint(tr1,tr2)
+
+
+    @staticmethod
+    def line_distance(tr1,tr2,time):
+        """ 
+        Calculate the distance of two lines at a certain time
+        INPUT:
+        ---
+        tr1,tr2: list
+            ["x0", "y0", "z0", "vx", "vy", "vz", "t0"])
+        time: float
+            the time to calculate distance
+        """
+        pos1 = tr1[:3] + tr1[3:6]*(t_ca - tr1[6])
+        pos2 = tr2[:3] + tr2[3:6]*(t_ca - tr2[6])  
+        displacement = pos1-pos2
+        
+        return np.dot(displacement,displacement) 
+
+    @staticmethod
+    def position(track, t=None, y=None, x=None, z=None) :
+        if y is not None:
+            dy = y-track.y0
+            x = track.x0 + track.Ax*dy
+            z = track.z0 + track.Az*dy
+            t = track.t0 + track.At*dy 
+        elif t is not None:
+            dt = t-track.y0
+            x = track.x0 + track.Ax/track.At*dy
+            y = track.y0 + 1/track.At*dy             
+            z = track.z0 + track.Az/track.At*dy
+        return np.array([x,y,z,t])
+
+
+    @staticmethod
+    def distance_to_point(line, point):
+        track_position = track.position(line, y=point[1])
+        return np.linalg.norm((track_position-point)[:3])         
 
 
     @staticmethod
@@ -242,7 +391,7 @@ class track:
     def fit_track(hits, guess):
         x0_init, z0_init,t0_init,Ax_init,Az_init,At_init = guess
 
-        m = Minuit(chi2_track(hits),x0=x0_init, z0=z0_init, t0=t0_init, Ax=Ax_init,Az=Az_init, At=At_init)
+        m = iminuit.Minuit(chi2_track(hits),x0=x0_init, z0=z0_init, t0=t0_init, Ax=Ax_init,Az=Az_init, At=At_init)
         # m.fixed["y0"]=True
         m.limits["x0"]=(-100000,100000)
         m.limits["z0"]=(-100000,100000)
@@ -285,107 +434,4 @@ class chi2_track:
        
 
 class vertex:
-    @staticmethod
-    def chi2_point_track(point, track, point_unc=None):
-        """ 
-        Calculate the chi-squre distance between 
-        a 4-D point [x,y,z,t] and a track parameterized by [x0, y0, z0, t0, Ax, Az, At]
-        where Ax = dx/dy, Az = dz/dy, At = dt/dy
-
-        INPUT:
-        ---
-        point: list
-            [x,y,z,t]
-        track: namedtuple
-            namedtuple("Track", ["x0", "y0", "z0", "t0", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
-        point_unc: list or None
-            [x_err,y_err,z_err,t_err]
-        """
-        x,y,z,t = point
-        dy = track.y0 - point[3]
-
-        # Residual
-        track_x = track.x0 + track.Ax*dy
-        track_z = track.z0 + track.Az*dy
-        track_t = track.t0 + track.At*dy  
-        residual = [track_x-x, track_z-z, trackt-t]  
-
-        # Covariance
-        jac=np.array([[ 	1,  0,	0,  dy,   0,    0],
-                        [ 	0,  1,  0,   0,  dy,    0],
-                        [	0,  0, 	1,   0,   0,    dy]])
-        covariance = jac @ track.cov @ jac.T
-
-        # Add the uncertainty of the point
-        if point_unc is not None:
-            x_err,y_err,z_err,t_err = point_unc
-            covariance +=np.diag(np.array([x_err, z_err, t_err])**2)
-
-        chi2 = residual.T @ np.linalg.inv(covariance) @ residual
-
-        return chi2    
-
-        
-    @staticmethod
-    def closest_approach_midpoint(tr1, tr2):
-        """
-        INPUT:
-        ---
-        tr1,tr2: list
-            ["x0", "y0", "z0", "vx", "vy", "vz", "t"])
-            
-        return:
-        ---
-        midpoint([x,y,z,t]), distance
-        """
-        
-
-        rel_v = tr2[3:6] - tr1[3:6]
-        rel_v2 = np.dot(rel_v, rel_v) 
-
-        # Find the time at midpoint
-        displacement = tr1[:3] - tr2[:3]; # position difference
-        t_ca = (  np.dot(displacement, rel_v) + np.dot((tr2[3:6]*tr2[6] - tr1[3:6]*tr1[6]), rel_v)  )/rel_v2    
-
-        pos1 = tr1[:3] + tr1[3:6]*(t_ca - tr1[6])
-        pos2 = tr2[:3] + tr2[3:6]*(t_ca - tr2[6])
-        midpoint = (pos1 + pos2)*(0.5)
-        midpoint.append(t_ca)
-        
-        distance = np.linalg.norm((pos1- pos2))
-        return midpoint, distance
-
-    @staticmethod
-    def closest_approach_midpoint_Track(track1, track2):
-        """
-        INPUT:
-        ---
-        track1,track2: namedtuple
-            namedtuple("Track", ["x0", "y0", "z0", "t0", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
-            
-        return:
-        ---
-        midpoint([x,y,z,t]), distance
-        """
-        tr1 = [track1.x0, track1.y0, track1.z0, track1.Ax/track1.At, track1.Ay/track1.At, track1.Az/track1.At, track1.t0]
-        tr2 = [track2.x0, track2.y0, track2.z0, track2.Ax/track2.At, track2.Ay/track2.At, track2.Az/track2.At, track2.t0]
-
-        return vertex.closest_approach_midpoint_simple(tr1,tr2)
-
-
-    @staticmethod
-    def line_distance(tr1,tr2,time):
-        """ 
-        Calculate the distance of two lines at a certain time
-        INPUT:
-        ---
-        tr1,tr2: list
-            ["x0", "y0", "z0", "vx", "vy", "vz", "t0"])
-        time: float
-            the time to calculate distance
-        """
-        pos1 = tr1[:3] + tr1[3:6]*(t_ca - tr1[6])
-        pos2 = tr2[:3] + tr2[3:6]*(t_ca - tr2[6])  
-        displacement = pos1-pos2
-        
-        return np.dot(displacement,displacement)            
+    a=1

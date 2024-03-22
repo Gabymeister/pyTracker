@@ -1,24 +1,26 @@
+import copy
+
+
 import numpy as np
 from numpy.linalg import inv
 import scipy as sp
 import scipy.constants
 
-
+# Internal modules
 import utilities as Util
 import kalmanfilter as KF
 import datatypes
 
-import copy
 
 # ----------------------------------------------------------------------
 class TrackFinder:
     def __init__(self, parameters=None, method="recursive", debug=False):
         self.method = method # {"recursive", "greedy"}
         self.parameters={
-            "cut_track_HitAddChi2": 15,          # Only used when method is "greedy"
+            "cut_track_HitAddChi2": 30,          # Only used when method is "greedy"
             "cut_track_HitDropChi2": 10,         # Set to -1 to turn off
-            "cut_track_HitProjectionSigma": 12,   # Number of sigmas
-            "cut_track_TrackChi2Reduced": 6,
+            "cut_track_HitProjectionSigma": 15,   # Number of sigmas
+            "cut_track_TrackChi2Reduced": 7,
             "cut_track_TrackNHitsMin": 3,
         }
 
@@ -346,11 +348,15 @@ class TrackFinder:
                 self.seeds.pop(i)
 
         # Redo the grouping
-        for layer in self.hits_grouped:
+        for layer in list(self.hits_grouped.keys()):
             hits = self.hits_grouped[layer]
             for ihit in reversed(range(len(hits))):
                 if hits[ihit].ind in hits_found_inds:
                     hits.pop(ihit)
+
+            if len(hits)==0:
+                self.hits_grouped.pop(layer)
+
 
 
     def filter_smooth(self, hits, drop_chi2=-1):
@@ -398,9 +404,6 @@ class TrackFinder:
                     dropped_inds.append(kf.CURRENT_STEP)
                 # Finishing the current step
                 kf.smooth_step(drop = dropped)
-
-
-        
 
         return kf, dropped_inds 
 
