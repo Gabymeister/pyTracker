@@ -4,9 +4,9 @@ import scipy as sp
 import scipy.constants
 
 
-import KalmanUtils as KU
-import KalmanFilter as KF
-import DataTypes
+import utilities as Util
+import kalmanfilter as KF
+import datatypes
 
 import copy
 
@@ -15,10 +15,10 @@ class TrackFinder:
     def __init__(self, parameters=None, method="recursive", debug=False):
         self.method = method # {"recursive", "greedy"}
         self.parameters={
-            "cut_track_HitAddChi2": 10,          # Only used when method is "greedy"
+            "cut_track_HitAddChi2": 15,          # Only used when method is "greedy"
             "cut_track_HitDropChi2": 10,         # Set to -1 to turn off
-            "cut_track_HitProjectionSigma": 10,  # Number of sigmas
-            "cut_track_TrackChi2Reduced": 5,
+            "cut_track_HitProjectionSigma": 12,   # Number of sigmas
+            "cut_track_TrackChi2Reduced": 6,
             "cut_track_TrackNHitsMin": 3,
         }
 
@@ -29,7 +29,7 @@ class TrackFinder:
         """
         self.seeds = self.seeding(hits)
         self.hits = copy.copy(hits)
-        self.hits_grouped = KU.group_hits_by_layer(self.hits)
+        self.hits_grouped = Util.track.group_hits_by_layer(self.hits)
         self.tracks = []
         while len(self.seeds)>0:
             # ------------------------------------
@@ -85,7 +85,7 @@ class TrackFinder:
     def find(self, hits):
         self.seeds = self.seeding(hits)
         self.hits = copy.copy(hits)
-        self.hits_grouped = KU.group_hits_by_layer(self.hits)
+        self.hits_grouped = Util.track.group_hits_by_layer(self.hits)
         self.tracks_found = []
         while len(self.seeds)>0:
             seed = self.seeds[-1]
@@ -176,7 +176,7 @@ class TrackFinder:
             step_pre = seed_hits[1].y # Keep track of the y of the previous step
 
             kf_find = KF.KalmanFilterFind()
-            kf_find.init_filter(*KU.init_state(seed_hits)) # Set initial state using two hits specified by the seed
+            kf_find.init_filter(*Util.track.init_state(seed_hits)) # Set initial state using two hits specified by the seed
             if self.method=="recursive":
                 hits_found_forward,chi2 = self.find_in_layers_recursive(hits, hits_layer_grouped, FIND_FORWARD_LAYERS, kf_find, step_pre)
             else:
@@ -187,7 +187,7 @@ class TrackFinder:
             step_pre = seed_hits[1].y # Keep track of the y of the previous step
 
             kf_find = KF.KalmanFilterFind()
-            kf_find.init_filter(*KU.init_state(seed_hits))
+            kf_find.init_filter(*Util.track.init_state(seed_hits))
             if self.method=="recursive":
                 hits_found_backward, chi2 = self.find_in_layers_recursive(hits, hits_layer_grouped, FIND_BACKWARD_LAYERS, kf_find, step_pre)
             else:
@@ -207,11 +207,16 @@ class TrackFinder:
         hits_found = []
         for layer in layers_to_scan:
             hits_thislayer = hits_layer_grouped[layer]
+            if len(hits_thislayer)==0:
+                continue
+
+            # Get one hit
+            hit = hits_thislayer[0]
 
             # Get the prediction matrix 
             step_this = hits_thislayer[0].y 
             dy = step_this - step_pre # Step size
-            _, Vi, Hi, Fi, Qi = KU.add_measurement(hits_thislayer[0], dy) # Calculate matrices. Only need to do once for all this in the same layer
+            _, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_thislayer[0], dy) # Calculate matrices. Only need to do once for all this in the same layer
             kf_find.update_matrix(Vi, Hi, Fi, Qi) # pass matrices to KF
 
             # Use the Predicted location to limit the search range
@@ -219,10 +224,12 @@ class TrackFinder:
             Xp_unc = np.sqrt(np.diag(kf_find.Rp_i))
             # Function to test if new measurement is within N_sigma times the uncertainty ellipsoid
             N_sigma = self.parameters["cut_track_HitProjectionSigma"]
-            test_measurement_incompatible = lambda x,z,t: abs(x-Xp[0])>Xp_unc[0]*N_sigma or \
-                                                        abs(z-Xp[1])>Xp_unc[1]*N_sigma or \
-                                                        abs(t-Xp[2])>Xp_unc[2]*N_sigma or \
-                                                        ((x-Xp[0])/Xp_unc[0])**2 + ((z-Xp[1])/Xp_unc[1])**2 + ((t-Xp[2])/Xp_unc[2])**2 > N_sigma**2            
+            # Use the total uncertainty of the prediction plus the measurement
+            unc_total = [np.linalg.norm([hit.x_err,Xp_unc[0]]), np.linalg.norm([hit.z_err,Xp_unc[1]]), np.linalg.norm([hit.t_err,Xp_unc[2]])]
+            test_measurement_incompatible = lambda x,z,t: abs(x-Xp[0])>unc_total[0]*N_sigma or \
+                                                        abs(z-Xp[1])>unc_total[1]*N_sigma or \
+                                                        abs(t-Xp[2])>unc_total[2]*N_sigma or \
+                                                        ((x-Xp[0])/unc_total[0])**2 + ((z-Xp[1])/unc_total[1])**2 + ((t-Xp[2])/unc_total[2])**2 > N_sigma**2            
 
             # Calculate chi2 for all hits in the next layer
             # chi2_predict = [kf_find.forward_predict_chi2(np.array([mi.x, mi.z, mi.t])) for mi in hits_thislayer]
@@ -291,7 +298,7 @@ class TrackFinder:
         step_this = hits_thislayer[0].y 
         dy = step_this - step_pre # Step size
         step_pre = step_this
-        _, Vi, Hi, Fi, Qi = KU.add_measurement(hits_thislayer[0], dy) # Calculate matrices. Only need to do once for all this in the same layer
+        _, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_thislayer[0], dy) # Calculate matrices. Only need to do once for all this in the same layer
         kf_find.update_matrix(Vi, Hi, Fi, Qi) # pass matrices to KF
 
         # Predicted location 
@@ -299,10 +306,14 @@ class TrackFinder:
         Xp_unc = np.sqrt(np.diag(kf_find.Rp_i))
         # Function to test if new measurement is within N_sigma times the uncertainty ellipsoid
         N_sigma = self.parameters["cut_track_HitProjectionSigma"]
-        test_measurement_incompatible = lambda x,z,t: abs(x-Xp[0])>Xp_unc[0]*N_sigma or \
-                                                    abs(z-Xp[1])>Xp_unc[1]*N_sigma or \
-                                                    abs(t-Xp[2])>Xp_unc[2]*N_sigma or \
-                                                    ((x-Xp[0])/Xp_unc[0])**2 + ((z-Xp[1])/Xp_unc[1])**2 + ((t-Xp[2])/Xp_unc[2])**2 > N_sigma**2   
+        # Use the total uncertainty of the prediction plus the measurement
+        hit = hits_thislayer[0]
+        unc_total = [np.linalg.norm([hit.x_err,Xp_unc[0]]), np.linalg.norm([hit.z_err,Xp_unc[1]]), np.linalg.norm([hit.t_err,Xp_unc[2]])]
+        test_measurement_incompatible = lambda x,z,t: abs(x-Xp[0])>unc_total[0]*N_sigma or \
+                                                    abs(z-Xp[1])>unc_total[1]*N_sigma or \
+                                                    abs(t-Xp[2])>unc_total[2]*N_sigma or \
+                                                    ((x-Xp[0])/unc_total[0])**2 + ((z-Xp[1])/unc_total[1])**2 + ((t-Xp[2])/unc_total[2])**2 > N_sigma**2    
+
         # calculate chi2 for all hits in the next layer
         for imeasurement, m in enumerate(hits_thislayer):
             # Limit our search to the hits close to prediction:
@@ -357,7 +368,7 @@ class TrackFinder:
         kf = KF.KalmanFilter()
 
         # Set initial state using first two hits
-        m0, V0, H0, Xf0, Cf0, Rf0 = KU.init_state(hits) # Use the first two hits to initiate
+        m0, V0, H0, Xf0, Cf0, Rf0 = Util.track.init_state(hits) # Use the first two hits to initiate
         kf.init_filter( m0, V0, H0, Xf0, Cf0, Rf0)
         
 
@@ -366,7 +377,7 @@ class TrackFinder:
             # get updated matrix
             hit = hits[i]
             dy  = hits[i].y-hits[i-1].y
-            mi, Vi, Hi, Fi, Qi = KU.add_measurement(hit, dy)
+            mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hit, dy)
             
             # pass to KF
             kf.forward_predict(mi, Vi, Hi, Fi, Qi)
@@ -401,7 +412,7 @@ class TrackFinder:
 
         """
         # propagate the KF result from the second hit to the first hit
-        mi, Vi, Hi, Fi, Qi = KU.add_measurement(hits_found[0], hits_found[0].y - hits_found[1].y)
+        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], hits_found[0].y - hits_found[1].y)
         state_predicted_step_0 = Fi@kalman_result.Xsm[0]
         statecov_predicted_step_0 = Fi@kalman_result.Csm[0]@Fi.T + Qi 
         # Add the covariance of one additional layer:
@@ -426,5 +437,5 @@ class TrackFinder:
         hits_filtered.insert(0, [x0,y0,z0,t0])
 
         # Track is a namedtuple("Track", ["x0", "y0", "z0", "t", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
-        track = DataTypes.Track(x0, y0, z0, t0, Ax, Ay, Az, At, cov, chi2, ind, hits, hits_filtered)
+        track = datatypes.Track(x0, y0, z0, t0, Ax, Ay, Az, At, cov, chi2, ind, hits, hits_filtered)
         return track
