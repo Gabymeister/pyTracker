@@ -6,6 +6,7 @@ import numpy as np
 from numpy.linalg import inv
 import scipy as sp
 import scipy.constants
+import iminuit
 
 
 # Internal modules
@@ -90,7 +91,7 @@ class VertexFitter:
         seed_midpoint = np.array([seed.x0, seed.y0, seed.z0, seed.t0])
         tracks_found = [tracks[seed_inds[0]], tracks[seed_inds[1]]]
         # Fit the seed
-        m = vf.fit(tracks_found, seed_midpoint, hesse=False)
+        m = self.fit(tracks_found, seed_midpoint, hesse=False)
         if (not m.valid) or (m.fval>self.parameters["cut_vertex_SeedChi2"]):
             if self.debug: print(f"  * Seed failed. Seed fit result valid: {m.valid}, seed chi2 {m.fval}")
             return [], []        
@@ -125,7 +126,7 @@ class VertexFitter:
                 continue
 
             tracks_found.append(tracks[info.track_ind])
-            m = vf.fit(tracks_found, vertex_location, hesse=False)
+            m = self.fit(tracks_found, vertex_location, hesse=False)
             ndof = 3*len(tracks_found)-4
             if (not m.valid) or (m.fval/ndof>self.parameters["cut_vertex_VertexChi2Reduced"])\
                 or ((m.fval-vertex_chi2)>self.parameters["cut_vertex_TrackAddChi2"]):
@@ -187,7 +188,7 @@ class VertexFitter:
 
                 # # Cut on seed chi2
                 # # This relys on a least square fit which is very slow 
-                # m = vf.fit([tracks[i],tracks[j]], midpoint, hesse=False)
+                # m = self.fit([tracks[i],tracks[j]], midpoint, hesse=False)
                 # if not m.valid or m.fval>self.parameters["cut_vertex_SeedChi2"]:
                 #     continue
                 # midpoint_fit = np.array(m.values)
