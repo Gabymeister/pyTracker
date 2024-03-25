@@ -74,7 +74,6 @@ class hit:
         return hits, hits_truth, np.array(par_truth)
 
 
-
 class track:
     @staticmethod
     def init_state(hits):
@@ -111,12 +110,23 @@ class track:
 
 
     @staticmethod
-    def add_measurement(hit, dy):
+    def add_measurement(hit, dy, velocity = None):
         """
+        Calculate matrix when adding a new hit
+        INPUT:
+        ---
+        hit: Hit
+        dy: flot
+        velocity: None or [vx, vy, vz]
+            direction of the line
+
+        RETURN:
+        ---
         mi, Vi, Hi, Fi, Qi
         """
-        mi = np.array([hit.x, hit.z, hit.t])
-        Vi = np.diag([hit.x_err, hit.z_err, hit.t_err])**2
+        mi = np.array([hit.x, hit.z, hit.t])                 # measurement
+        Vi = np.diag([hit.x_err, hit.z_err, hit.t_err])**2  # measurement uncertainty
+        # measurement matrix
         Hi = np.array([[1,0,0,0,0,0],
                     [0,1,0,0,0,0],
                     [0,0,1,0,0,0]])
@@ -126,66 +136,81 @@ class track:
                     [0, 0, 0, 1, 0, 0],
                     [0, 0, 0, 0, 1, 0],
                     [0, 0, 0, 0, 0, 1]])
-        Qi = track.update_Q()
+        Qi = track.update_Q(dy, velocity) if velocity is not None else 0
         return mi, Vi, Hi, Fi, Qi
 
     @staticmethod
-    def update_Q():
-        # dy=100
-        # a=0.1
-        # c=0.1
-        # b=np.sqrt(1-a**2-c**2)
-        # mag=30
+    def update_Q(dy, velocity):
+        mag=np.linalg.norm(velocity)
+        a,b,c = np.array(velocity)/mag
 
-        # b2 = b**2
-        # a2 = a**2
-        # dy2 = dy*dy
-        # b4 = np.power(b, 4)
-        # mag2 = np.power(mag , 2)
+        # precalculate some numbers
+        b2 = b**2
+        a2 = a**2
+        dy2 = dy*dy
+        b4 = np.power(b, 4)
+        mag2 = np.power(mag , 2)
 
-        # Q=np.array([[dy2 * (b2 +a2) / b4,
-        #     dy2 * a / (mag * b4),
-        #     dy2 * a * c / b4,
-        #     mag  * dy / b,
-        #     -mag  * dy * a / (b2),
-        #     0,],
-        #     [dy2 * a / (mag  * b4),
-        #     dy2 * (1 - b2) / (mag2 * b4),
-        #     dy2 * c / (mag  * b4),
-        #     dy * a / b,
-        #     -dy * (1 - b2) / (b2),
-        #     dy * c / b,],
-        #     [dy2 * a * c / b4,
-        #     dy2 * c / (mag  * b4),
-        #     dy2 * (c * c + b2) / b4,
-        #     0,
-        #     -mag  * dy * c / (b2),
-        #     mag  * dy / b,],
-        #     [mag  * dy / b,
-        #     dy * a / b,
-        #     0,
-        #     mag2 * (1 -a2),
-        #     -mag2 * (a * b),
-        #     -mag2 * (a * c),],
-        #     [-mag  * dy * a / (b2),
-        #     -dy * (1 - b2) / (b2),
-        #     -mag  * dy * c / (b2),
-        #     -mag2 * (a * b),
-        #     mag2 * (1 - b2),
-        #     -mag2 * (b * c),],
-        #     [0,
-        #     dy * c / b,
-        #     mag  * dy / b,
-        #     -mag2 * (a * c),
-        #     -mag2 * (b * c),
-        #     mag2 * (1 - c * c)]])
+        # Force the speed to be speed of light
+        mag=29.97
+        mag2=mag**2
 
-        Q=0
+        Q=np.array([[dy2 * (b2 +a2) / b4,
+                        dy2 * a / (mag * b4),
+                        dy2 * a * c / b4,
+                        mag  * dy / b,
+                        -mag  * dy * a / (b2),
+                        0,],
+                    [dy2 * a / (mag  * b4),
+                        dy2 * (1 - b2) / (mag2 * b4),
+                        dy2 * c / (mag  * b4),
+                        dy * a / b,
+                        -dy * (1 - b2) / (b2),
+                        dy * c / b,],
+                    [dy2 * a * c / b4,
+                        dy2 * c / (mag  * b4),
+                        dy2 * (c * c + b2) / b4,
+                        0,
+                        -mag  * dy * c / (b2),
+                        mag  * dy / b,],
+                    [mag  * dy / b,
+                        dy * a / b,
+                        0,
+                        mag2 * (1 -a2),
+                        -mag2 * (a * b),
+                        -mag2 * (a * c),],
+                    [-mag  * dy * a / (b2),
+                        -dy * (1 - b2) / (b2),
+                        -mag  * dy * c / (b2),
+                        -mag2 * (a * b),
+                        mag2 * (1 - b2),
+                        -mag2 * (b * c),],
+                    [0,
+                        dy * c / b,
+                        mag  * dy / b,
+                        -mag2 * (a * c),
+                        -mag2 * (b * c),
+                        mag2 * (1 - c * c)]])
+
+        sin_theta = np.abs(b)
+        L_Al =  0.6
+        L_Sc = 1.0 # [cm] Scintillator
+        L_r_Al = 24.0111/2.7; # [cm] Radiation length Aluminum/ density of Aluminum
+        L_r_Sc = 43; # [cm] Radiation length Scintillator (Saint-Gobain paper)
+
+        L_rad = L_Al / L_r_Al + L_Sc / L_r_Sc; # [rad lengths] orthogonal to Layer
+        L_rad /= sin_theta; # [rad lengths] in direction of track
+
+        sigma_ms = 13.6 * np.sqrt(L_rad) * (1 + 0.038 * np.log(L_rad)); #
+        sigma_ms /= 1000 # [MeV] Divided by 500 MeV
+
+        Q = Q*sigma_ms**2
+        
         return Q
 
 
     @staticmethod
-    def run_kf(hits):
+    def run_kf(hits, multiple_scattering = False):
         kf = KF.KalmanFilter()
 
         # Set initial state using first two hits
@@ -198,7 +223,15 @@ class track:
             # get updated matrix
             hit = hits[i]
             dy  = hits[i].y-hits[i-1].y
-            mi, Vi, Hi, Fi, Qi = track.add_measurement(hit, dy)
+
+            # If you don't need multiple scattering:
+            if not multiple_scattering: 
+                mi, Vi, Hi, Fi, Qi = track.add_measurement(hit, dy)
+            # Or, use this 
+            else:
+                Ax, Az, At = kf.Xf[-1][3:]
+                velocity = [Ax/At, 1/At, Az/At]
+                mi, Vi, Hi, Fi, Qi = track.add_measurement(hit, dy, velocity=velocity)
             
             # pass to KF
             kf.forward_predict(mi, Vi, Hi, Fi, Qi)
@@ -271,10 +304,10 @@ class track:
 
         # Add the uncertainty of the point
         if point_unc is not None:
-            if np.array(point_unc)==1:
+            if np.array(point_unc).ndim==1:
                 x_err,y_err,z_err,t_err = point_unc
                 covariance += np.diag(np.array([x_err, z_err, t_err])**2)
-            elif np.array(point_unc)==2:
+            elif np.array(point_unc).ndim==2:
                 covariance += point_unc
 
         chi2 = residual.T @ np.linalg.inv(covariance) @ residual

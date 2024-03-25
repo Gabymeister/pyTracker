@@ -227,7 +227,7 @@ class VertexFitter:
         m.limits["x0"]=(-100000,100000)
         m.limits["y0"]=(-100000,100000)
         m.limits["z0"]=(-100000,100000)
-        m.limits["t0"]=(-100,1e5)
+        m.limits["t0"]=(-500,1e5)
         m.errors["x0"]=0.1
         m.errors["y0"]=0.1
         m.errors["z0"]=0.1
