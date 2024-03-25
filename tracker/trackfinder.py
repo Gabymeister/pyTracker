@@ -46,14 +46,15 @@ class TrackFinder:
             # Apply cuts
             # If not enough hits, drop this track
             if len(hits_found)<self.parameters["cut_track_TrackNHitsMin"] or len(hits_found)==2:
-                if self.debug: print(f"   failed, not enough hits. Hits found: {len(hits_found)}")
+                if self.debug: print(f"   finding failed, not enough hits. Hits found: {len(hits_found)}")
                 continue            
             ndof = 3*len(hits_found) - 6
             track_chi2_reduced = track_chi2/ndof                   
             # If chi2 is too large, drop this track
             if track_chi2_reduced>self.parameters["cut_track_TrackChi2Reduced"]:
-                if self.debug: print(f"   failed, chi2 too large. Chi2/nodf: {track_chi2}/{ndof}")
+                if self.debug: print(f"   finding failed, chi2 too large. Chi2/nodf: {track_chi2}/{ndof}")
                 continue
+
 
             # Sort the hits by time before running the filter
             hits_found.sort(key=lambda hit: hit.t)
@@ -63,11 +64,10 @@ class TrackFinder:
             kalman_result, inds_dropped = self.filter_smooth(hits_found, drop_chi2=self.parameters["cut_track_HitDropChi2"])
             inds_dropped.sort(reverse=True)
             for ind in inds_dropped:
-                if self.debug: print(f"   hit dropped. Hit {hits_found[ind][:6]}")
                 hits_found.pop(ind)
             # If not enough hits, drop this track
             if len(hits_found)<self.parameters["cut_track_TrackNHitsMin"]:
-                if self.debug: print(f"   failed, not enough hits. Hits found: {len(hits_found)}")
+                if self.debug: print(f"  fitting failed, not enough hits. Hits found: {len(hits_found)}")
                 continue                
 
             # ------------------------------------
@@ -150,7 +150,8 @@ class TrackFinder:
                 seeds.append([i,j,ds])
 
         # Sort seeds by score
-        seeds.sort(key=lambda s: s[-1])
+        # Reversed: place the best one at the end
+        seeds.sort(key=lambda s: s[-1], reverse=True)
         return seeds
 
     def find_once(self, hits, hits_layer_grouped, seed):  
@@ -436,6 +437,7 @@ class TrackFinder:
                 dropped =  chi2_temp>drop_chi2
                 if dropped:
                     dropped_inds.append(kf.CURRENT_STEP)
+                    if self.debug: print(f"   hit dropped with chi2 {chi2_temp}. Hit {hits[kf.CURRENT_STEP][:6]}")
                 # Finishing the current step
                 kf.smooth_step(drop = dropped)
 

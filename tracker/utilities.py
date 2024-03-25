@@ -16,20 +16,20 @@ class hit:
         det_width  = 4.5 # 4.5cm per bar
         det_height = 1 #[cm]
         time_resolution = 1 #[ns], single channel
-        refraction_index = 1.5
+        refraction_index = 1.58
         
         unc_trans = det_width/np.sqrt(12)                  
         unc_long = time_resolution*sp.constants.c/1e7/np.sqrt(2)/refraction_index
-        UNC_T = time_resolution # ns
+        UNC_T = time_resolution/np.sqrt(2) # ns
         UNC_Y = det_height/np.sqrt(12) # uncertainty in thickness, cm
         
 
         hits=[]
         for i, layer in enumerate(Y_LAYERS):
             if i%2==1:
-                hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_trans, 0, unc_long, UNC_T, layer, i))
+                hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_trans, UNC_Y, unc_long, UNC_T, layer, i))
             else:
-                hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_long, 0, unc_trans, UNC_T, layer, i))         
+                hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_long, UNC_Y, unc_trans, UNC_T, layer, i))         
                 
         return hits
 
