@@ -208,6 +208,9 @@ class TrackFinder:
             # Rest the seed to be the first two hits
             seed_hits = hits_found[:2]            
             step_pre = seed_hits[1].y # Keep track of the y of the previous step
+            if max(LAYERS)==seed_hits[1].layer:
+                return hits_found, chi2
+
             if (seed_hits[0].y > seed_hits[1].y):
                 FIND_FORWARD_LAYERS = LAYERS[:np.argmax(LAYERS>seed_hits[1].layer)-1][::-1]
             else:
