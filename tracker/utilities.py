@@ -154,6 +154,7 @@ class track:
         # Force the speed to be speed of light
         mag=29.97
         mag2=mag**2
+        p=1000 # [MeV] Momentum 
 
         Q=np.array([[dy2 * (b2 +a2) / b4,
                         dy2 * a / (mag * b4),
@@ -193,7 +194,7 @@ class track:
                         mag2 * (1 - c * c)]])
 
         sin_theta = np.abs(b)
-        L_Al =  0.6
+        L_Al =  0.4
         L_Sc = 1.0 # [cm] Scintillator
         L_r_Al = 24.0111/2.7; # [cm] Radiation length Aluminum/ density of Aluminum
         L_r_Sc = 43; # [cm] Radiation length Scintillator (Saint-Gobain paper)
@@ -202,7 +203,7 @@ class track:
         L_rad /= sin_theta; # [rad lengths] in direction of track
 
         sigma_ms = 13.6 * np.sqrt(L_rad) * (1 + 0.038 * np.log(L_rad)); #
-        sigma_ms /= 1000 # [MeV] Divided by 500 MeV
+        sigma_ms /= p # [MeV] Divided by 1000 MeV
 
         Q = Q*sigma_ms**2
         
@@ -467,4 +468,21 @@ class chi2_track:
        
 
 class vertex:
-    a=1
+    @staticmethod
+    def score_seed(seed_par):
+        """ 
+        Calculate a score for the vertex seed
+        This is purely empirical.
+
+        Lower score means better seed quality and should be used first.
+        """
+        x0,y0,z0,t0, midpoint_chi2, dist_seed, N_compatible_tracks, N_compatible_hits, seed_track_unc, seed_track_chi2 = seed_par
+
+        # Score based on the following items:
+        # - Seed chi2
+        # - Seed distance
+        # - Seed starting point (Higher priority to ones closer to the IP)
+        # - Seed track uncertainty
+        # - Number of compatible tracks
+        score = 3*midpoint_chi2 + dist_seed + 0.1*y0 + 0.2*seed_track_unc -20*N_compatible_tracks
+        return score

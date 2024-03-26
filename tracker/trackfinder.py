@@ -18,10 +18,12 @@ class TrackFinder:
         self.method = method # {"recursive", "greedy"}
         self.debug = debug
         self.parameters={
-            "cut_track_HitAddChi2": 30,          # Only used when method is "greedy"
-            "cut_track_HitDropChi2": 10,         # Set to -1 to turn off
-            "cut_track_HitProjectionSigma": 15,   # Number of sigmas
+            "cut_track_SeedSpeed": 6,          # in the unit of c. Limit the maximum speed formed by the seed.
+            "cut_track_HitAddChi2": 15,          # Only used when method is "greedy"
+            "cut_track_HitDropChi2": 15,         # Set to -1 to turn off
+            "cut_track_HitProjectionSigma": 10,   # Number of sigmas
             "cut_track_TrackChi2Reduced": 7,
+            "cut_track_TrackSpeed": [15,40], # [cm/ns], (speed_low, speed_high). 30 is speed of light
             "cut_track_TrackNHitsMin": 3,
             "fit_track_MultipleScattering": False
         }
@@ -31,61 +33,82 @@ class TrackFinder:
         Run all three rounds of kalman filter: find, drop, fit
         This function is a mixer of self.find() and self.filter_smooth()
         """
-        self.seeds = self.seeding(hits)
         self.hits = copy.copy(hits)
         self.hits_grouped = Util.track.group_hits_by_layer(self.hits)
+        self.total_layers = len(list(self.hits_grouped.keys()))
         self.tracks = []
-        while len(self.seeds)>0:
-            # ------------------------------------
-            # Round 1: Find hits that belongs to one track
-            seed = self.seeds[-1]; 
-            if self.debug: print(f"--- New seed --- \n  seed: {seed}")
-            hits_found, track_chi2 = self.find_once(self.hits, self.hits_grouped, seed)
-            # Remove the current seed no matter the track is good or not:
-            self.seeds.pop(-1)                
-            # Apply cuts
-            # If not enough hits, drop this track
-            if len(hits_found)<self.parameters["cut_track_TrackNHitsMin"] or len(hits_found)==2:
-                if self.debug: print(f"   finding failed, not enough hits. Hits found: {len(hits_found)}")
-                continue            
-            ndof = 3*len(hits_found) - 6
-            track_chi2_reduced = track_chi2/ndof                   
-            # If chi2 is too large, drop this track
-            if track_chi2_reduced>self.parameters["cut_track_TrackChi2Reduced"]:
-                if self.debug: print(f"   finding failed, chi2 too large. Chi2/nodf: {track_chi2}/{ndof}")
-                continue
+
+        if self.parameters["cut_track_TrackNHitsMin"]>self.total_layers:
+            return self.tracks
+
+        for track_TrackNHitsMin in range(self.parameters["cut_track_TrackNHitsMin"], self.total_layers+1)[::-1]:
+            self.seeds = self.seeding(self.hits)
+            self.hits_found_all = []
+            while len(self.seeds)>0:
+                # ------------------------------------
+                # Round 1: Find hits that belongs to one track
+                seed = self.seeds[-1]; 
+                if self.debug: print(f"--- New seed --- \n  seed: {seed}")
+                hits_found, track_chi2 = self.find_once(self.hits, self.hits_grouped, seed)
+                # Remove the current seed no matter the track is good or not:
+                self.seeds.pop(-1)                
+                # Apply cuts
+                # If not enough hits, drop this track
+                if len(hits_found)<track_TrackNHitsMin or len(hits_found)==2:
+                    if self.debug: print(f"   finding failed, not enough hits. Hits found: {len(hits_found)}")
+                    continue            
+                ndof = 3*len(hits_found) - 6
+                track_chi2_reduced = track_chi2/ndof                   
+                # If chi2 is too large, drop this track
+                if track_chi2_reduced>self.parameters["cut_track_TrackChi2Reduced"]:
+                    if self.debug: print(f"   finding failed, chi2 too large. Chi2/nodf: {track_chi2}/{ndof}")
+                    continue
 
 
-            # Sort the hits by time before running the filter
-            hits_found.sort(key=lambda hit: hit.t)
+                # Sort the hits by time before running the filter
+                hits_found.sort(key=lambda hit: hit.t)
 
-            # ------------------------------------
-            # Round 2: Run filter and smooth with the option to drop outlier during smoothing
-            kalman_result, inds_dropped = self.filter_smooth(hits_found, drop_chi2=self.parameters["cut_track_HitDropChi2"])
-            inds_dropped.sort(reverse=True)
-            for ind in inds_dropped:
-                hits_found.pop(ind)
-            # If not enough hits, drop this track
-            if len(hits_found)<self.parameters["cut_track_TrackNHitsMin"]:
-                if self.debug: print(f"  fitting failed, not enough hits. Hits found: {len(hits_found)}")
-                continue                
+                # ------------------------------------
+                # Round 2: Run filter and smooth with the option to drop outlier during smoothing
+                kalman_result, inds_dropped = self.filter_smooth(hits_found, drop_chi2=self.parameters["cut_track_HitDropChi2"])
+                inds_dropped.sort(reverse=True)
+                for ind in inds_dropped:
+                    hits_found.pop(ind)
+                # If not enough hits, drop this track
+                if len(hits_found)<self.parameters["cut_track_TrackNHitsMin"]:
+                    if self.debug: print(f"  fitting failed, not enough hits. Hits found: {len(hits_found)}")
+                    continue                
 
-            # ------------------------------------
-            # Round 3: Run filter and smooth again without dropping
-            kalman_result, inds_dropped = self.filter_smooth(hits_found, drop_chi2=-1)  
-            if self.debug: 
-                print(f" Track found. Added hits:") 
-                for t in hits_found:
-                    print(t)
+                # ------------------------------------
+                # Round 3: Run filter and smooth again without dropping
+                kalman_result, inds_dropped = self.filter_smooth(hits_found, drop_chi2=-1)  
+                if self.debug: 
+                    print(f" Track found. Added hits:") 
+                    for t in hits_found:
+                        print("  ", t)
+                # Cut on speed
+                state = kalman_result.Xsm[0]
+                speed = np.linalg.norm([state[3]/state[5], state[4]/state[5], 1/state[5]])  
+                if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
+                    if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
+                    continue
 
+                # ------------------------------------
+                # Finally, prepare the output
+                track_output = self.prepare_output(kalman_result, hits_found, track_ind = len(self.tracks))  
+                self.tracks.append(track_output)   
 
-            # Remove other seeds that shares hits of the found track
-            self.remove_related_hits_seeds(hits_found)
+                # Remove other seeds that shares hits of the found track
+                self.remove_related_hits_seeds(hits_found)
+                self.hits_found_all.extend(hits_found)                
 
-            # ------------------------------------
-            # Finally, prepare the output
-            track_output = self.prepare_output(kalman_result, hits_found, track_ind = len(self.tracks))  
-            self.tracks.append(track_output)            
+            # Remove the hits that are already added to track
+            hit_found_inds = [hit.ind for hit in self.hits_found_all]
+            hit_found_inds.sort(reverse=True)
+            for ind in hit_found_inds:
+                self.hits.pop(ind)
+            # Group the remaining hits
+            self.hits_grouped = Util.track.group_hits_by_layer(self.hits)
 
 
 
@@ -145,7 +168,7 @@ class TrackFinder:
                 dt = hits[i].t- hits[j].t
                 ds = np.abs((dx**2+dy**2-dz**2)/c**2-dt**2)
                 ds = ds/dt**2
-                if ds>50:
+                if ds>self.parameters["cut_track_SeedSpeed"]:
                     continue
                 seeds.append([i,j,ds])
 
