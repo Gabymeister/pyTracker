@@ -34,12 +34,13 @@ class VertexFitter:
         self.trackinfo =  namedtuple("trackinfo",["track_ind", "track_chi2", "track_vertex_chi2", "track_vertex_dist"])
         self.parameters={
             "cut_vertex_SeedDist": 300,          # [cm]
-            "cut_vertex_SeedChi2": 20,          
+            "cut_vertex_SeedChi2": 200,          
             "cut_vertex_TrackChi2Reduced": -1,        # NOT USED
-            "cut_vertex_TrackAddDist": 350,   
-            "cut_vertex_TrackAddChi2": 20,   
-            "cut_vertex_TrackDropChi2": 20,   
-            "cut_vertex_VertexChi2Reduced": 6,   
+            "cut_vertex_TrackAddDist": 400,   
+            "cut_vertex_TrackAddChi2": 30, 
+            "cut_vertex_VertexChi2ReducedAdd":10,
+            "cut_vertex_TrackDropChi2": 10,   
+            "cut_vertex_VertexChi2Reduced": 5,   
         }
 
     def run(self, tracks):
@@ -63,8 +64,46 @@ class VertexFitter:
             if len(tracks_found)==0:
                 continue
 
+            vertex_location =  np.array(vertex_fit.values) 
+            vertex_cov =  np.array(vertex_fit.covariance) 
+            vertex_chi2 = vertex_fit.fval 
+            vertex_tracks = tracks_found      
+            vertex_ndof = 3*len(vertex_tracks)-4
+
             # ------------------------------------
             # Round 2: Drop outliers
+            vertex_cov_xzt = copy.copy(vertex_cov)
+            vertex_cov_xzt = np.delete(vertex_cov_xzt, 1,0)
+            vertex_cov_xzt = np.delete(vertex_cov_xzt, 1,1)
+            tracks_chi2 = [Util.track.chi2_point_track(vertex_location, track, vertex_cov_xzt) for track in tracks_found]
+            while (max(tracks_chi2)>self.parameters["cut_vertex_TrackDropChi2"]):
+                # Drop the track
+                chi2_max = max(tracks_chi2)
+                ind_drop = np.argmax(tracks_chi2)
+                if self.debug: print(f"  track {tracks_found[ind_drop].ind} dropped with chi2 {chi2_max}")
+                tracks_found.pop(ind_drop)
+                if len(tracks_found)<2:
+                    if self.debug: print("Not enough tracks for this seed")
+                    break 
+                # Fit again
+                m = self.fit(tracks_found, vertex_location, hesse=False)
+                vertex_location =  np.array(vertex_fit.values) 
+                vertex_cov =  np.array(vertex_fit.covariance) 
+                vertex_chi2 = vertex_fit.fval 
+                vertex_ndof = 3*len(vertex_tracks)-4
+                vertex_tracks = tracks_found   
+                vertex_cov_xzt = copy.copy(vertex_cov)
+                vertex_cov_xzt = np.delete(vertex_cov_xzt, 1,0)
+                vertex_cov_xzt = np.delete(vertex_cov_xzt, 1,1)
+                tracks_chi2 = [Util.track.chi2_point_track(vertex_location, track, vertex_cov_xzt) for track in tracks_found]                              
+
+            if len(tracks_found)<2:
+                continue
+            if vertex_chi2/vertex_ndof>self.parameters["cut_vertex_VertexChi2Reduced"]:
+                print(f"Vertex vetoed. Chi2 too large. Chi2/ndof:{vertex_chi2}/{vertex_ndof}")
+                continue
+                
+
             # tracks_found, vertex_found = self.fit_once(seed)
 
             # ------------------------------------
@@ -73,18 +112,14 @@ class VertexFitter:
 
 
             # # Vertex = namedtuple("Vertex", ["x0", "y0", "z0", "t0", "cov", "chi2", "tracks"])
-            vertex_location =  np.array(vertex_fit.values) 
-            vertex_cov =  np.array(vertex_fit.covariance) 
-            vertex_chi2 = vertex_fit.fval 
-            vertex_tracks = tracks_found      
-            self.vertices.append(datatypes.Vertex(*vertex_location, vertex_cov, vertex_chi2, vertex_tracks))
 
-            if self.debug:
-                vertex_cov_xzt = copy.copy(vertex_cov)
-                vertex_cov_xzt = np.delete(vertex_cov_xzt, 1,0)
-                vertex_cov_xzt = np.delete(vertex_cov_xzt, 1,1)
-                tracks_chi2 = [Util.track.chi2_point_track(vertex_location, track, vertex_cov_xzt) for track in tracks_found]
-                print(tracks_chi2)
+            self.vertices.append(datatypes.Vertex(*vertex_location, vertex_cov, vertex_chi2, vertex_tracks))
+            tracks_found_inds = [t.ind for t in vertex_tracks]
+            if self.debug: 
+                print(f"Vertex found! track indices: {tracks_found_inds}")
+                print(f"  Tracks to vertex chi2:", tracks_chi2)
+                print(f"  Vertex Chi2: {vertex_chi2}; N tracks: {len(vertex_tracks)}; x0,y0,z0,t0: {vertex_location}; Uncertainty: {np.sqrt(np.diag(vertex_cov))}")
+
 
             # Finally, remove used tracks
             self.remove_related_seeds(tracks_found)
@@ -136,7 +171,7 @@ class VertexFitter:
             tracks_found.append(tracks[info.track_ind])
             m = self.fit(tracks_found, vertex_location, hesse=False)
             ndof = 3*len(tracks_found)-4
-            if (not m.valid) or (m.fval/ndof>self.parameters["cut_vertex_VertexChi2Reduced"])\
+            if (not m.valid) or (m.fval/ndof>self.parameters["cut_vertex_VertexChi2ReducedAdd"])\
                 or ((m.fval-vertex_chi2)>self.parameters["cut_vertex_TrackAddChi2"]):
                 if self.debug: print(f"  * Track [{info.track_ind}] removed from vertex fit. Fit valid: {m.valid}; vertex chi2_r {m.fval/ndof:.2f}; vertex chi2 increment {m.fval-vertex_chi2 :.2f}")                                   
                 tracks_found.pop(-1)
@@ -161,7 +196,6 @@ class VertexFitter:
                 self.tracks_remaining_info[j] = self.trackinfo(ind, chi2_track, chi2, dist)
 
         tracks_found_inds = [track.ind for track in tracks_found]
-        if self.debug: print(f"Vertex found! track indices: {tracks_found_inds} \n Chi2_r: {vertex_chi2/ndof}; {m_final.values}; Uncertainty: {m_final.errors}")
 
         return tracks_found, m_final
 
@@ -233,7 +267,7 @@ class VertexFitter:
 
         # Sort the seeds
         # Rank them reversely
-        seeds.sort(key=lambda seed: seed.score, reverse=True)
+        seeds.sort(key=lambda seed: (-seed.Ntracks, seed.score), reverse=True)
         self.seeds = seeds
 
         return seeds

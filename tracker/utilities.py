@@ -416,16 +416,16 @@ class track:
             z = track.z0 + track.Az*dy
             t = track.t0 + track.At*dy 
         elif t is not None:
-            dt = t-track.y0
-            x = track.x0 + track.Ax/track.At*dy
-            y = track.y0 + 1/track.At*dy             
-            z = track.z0 + track.Az/track.At*dy
+            dt = t-track.t0
+            x = track.x0 + track.Ax/track.At*dt
+            y = track.y0 + 1/track.At*dt
+            z = track.z0 + track.Az/track.At*dt
         return np.array([x,y,z,t])
 
 
     @staticmethod
     def distance_to_point(line, point):
-        track_position = track.position(line, y=point[1])
+        track_position = track.position(line, t=point[3])
         return np.linalg.norm((track_position-point)[:3])         
 
 
@@ -508,6 +508,6 @@ class vertex:
         # - Number of compatible tracks
         # score = 10*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.1*y0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
         score = 3*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.1*y0 + 0.1*z0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
-        score = 10*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed  -50*N_compatible_tracks
+        score = 3*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.2*seed_track_unc
 
         return score
