@@ -23,7 +23,7 @@ class TrackFinder:
             "cut_track_HitDropChi2": 15,         # Set to -1 to turn off
             "cut_track_HitProjectionSigma": 10,   # Number of sigmas
             "cut_track_TrackChi2Reduced": 7,
-            "cut_track_TrackSpeed": [15,40], # [cm/ns], (speed_low, speed_high). 30 is speed of light
+            "cut_track_TrackSpeed": [15,60], # [cm/ns], (speed_low, speed_high). 30 is speed of light
             "cut_track_TrackNHitsMin": 3,
             "fit_track_MultipleScattering": False
         }
@@ -79,9 +79,28 @@ class TrackFinder:
                     if self.debug: print(f"  fitting failed, not enough hits. Hits found: {len(hits_found)}")
                     continue                
 
+                # # ------------------------------------
+                # # Round 3: Run filter and smooth again without dropping
+                # kalman_result, inds_dropped = self.filter_smooth(hits_found, drop_chi2=-1)  
+                # if self.debug: 
+                #     print(f" Track found. Added hits:") 
+                #     for t in hits_found:
+                #         print("  ", t)
+                # # Cut on speed
+                # state = kalman_result.Xsm[0]
+                # speed = np.linalg.norm([state[3]/state[5], state[4]/state[5], 1/state[5]])  
+                # if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
+                #     if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
+                #     continue
+
+                # # ------------------------------------
+                # # Finally, prepare the output
+                # track_output = self.prepare_output(kalman_result, hits_found, track_ind = len(self.tracks))  
+
+
                 # ------------------------------------
                 # Round 3: Run filter and smooth again without dropping
-                kalman_result, inds_dropped = self.filter_smooth(hits_found, drop_chi2=-1)  
+                kalman_result, inds_dropped = self.filter_smooth(hits_found[::-1], drop_chi2=-1)   # This time we run the filter backwards
                 if self.debug: 
                     print(f" Track found. Added hits:") 
                     for t in hits_found:
@@ -95,7 +114,11 @@ class TrackFinder:
 
                 # ------------------------------------
                 # Finally, prepare the output
-                track_output = self.prepare_output(kalman_result, hits_found, track_ind = len(self.tracks))  
+                track_output = self.prepare_output_back(kalman_result, hits_found, track_ind = len(self.tracks))                  
+
+
+
+
                 self.tracks.append(track_output)   
 
                 # Remove other seeds that shares hits of the found track
@@ -481,9 +504,22 @@ class TrackFinder:
         velocity = [Ax/At, 1/At, Az/At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering      
 
         mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], hits_found[0].y - hits_found[1].y, velocity=velocity)
-        state_predicted_step_0 = Fi@kalman_result.Xsm[0]
-        statecov_predicted_step_0 = Fi@kalman_result.Csm[0]@Fi.T + Qi 
+        Xp_i = Fi@kalman_result.Xsm[0]
+        Cp_i = Fi@kalman_result.Csm[0]@Fi.T #+ Qi 
+
+        rp_i = mi - Hi@Xp_i
+        Rp_i = Vi + Hi@Cp_i@Hi.T
+        # Kalman Gain K
+        K = Cp_i.dot(Hi.T).dot(inv(Rp_i))
+        # Filtered State
+        Xf = Xp_i + K@rp_i# Combination of the predicted state, measured values, covariance matrix and Kalman Gain
+        Cf = (np.identity(len(Xf)) - K@Hi).dot(Cp_i)
+        state_predicted_step_0 = Xf
+        statecov_predicted_step_0 = Cf 
+
+
         # Add the covariance of one additional layer:
+        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], -1.5, velocity=velocity)
         cov = statecov_predicted_step_0 + Qi
         chi2 = kalman_result.chift_total
         ind = track_ind
@@ -507,3 +543,49 @@ class TrackFinder:
         # Track is a namedtuple("Track", ["x0", "y0", "z0", "t", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
         track = datatypes.Track(x0, y0, z0, t0, Ax, Ay, Az, At, cov, chi2, ind, hits, hits_filtered)
         return track
+
+
+    def prepare_output_back(self, kalman_result, hits_found_temp, track_ind=0):
+        """ 
+        Turn the Kalman filter result into a Track object
+
+        """
+        # propagate the KF result from the second hit to the first hit
+        hits_found = hits_found_temp[::-1]
+        Ax, Az, At = kalman_result.Xsm[0][3:]
+        velocity = [Ax/At, 1/At, Az/At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering      
+
+        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], hits_found[0].y - hits_found[1].y, velocity=velocity)
+        state_predicted_step_0 = Fi@kalman_result.Xsm[0]
+        x0 = state_predicted_step_0[0]
+        z0 = state_predicted_step_0[1]
+        t0 = state_predicted_step_0[2]
+        Ax = state_predicted_step_0[3]
+        Az = state_predicted_step_0[4]
+        At = state_predicted_step_0[5]
+        y0 = hits_found[0].y
+        Ay = 1 # Slope of Y vs Y, which is always 1
+
+        hits_filtered = [[xsm[0], hit.y, xsm[1], xsm[2]] for hit,xsm in zip(hits_found[1:], kalman_result.Xsm)]
+        hits_filtered.insert(0, [x0,y0,z0,t0])
+
+        # Add the covariance of one additional layer:
+        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[-1], -1.5, velocity=velocity)
+        cov = kalman_result.Cf[-1] #+ Qi
+        chi2 = kalman_result.chift_total
+        ind = track_ind
+        hits = [hit.ind for hit in hits_found[::-1]]        
+
+        track_result = kalman_result.Xf[-1]
+        x0 = track_result[0]
+        z0 = track_result[1]
+        t0 = track_result[2]
+        Ax = track_result[3]
+        Az = track_result[4]
+        At = track_result[5]
+        y0 = hits_found[-1].y
+        Ay = 1 # Slope of Y vs Y, which is always 1        
+
+        # Track is a namedtuple("Track", ["x0", "y0", "z0", "t", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
+        track = datatypes.Track(x0, y0, z0, t0, Ax, Ay, Az, At, cov, chi2, ind, hits, hits_filtered)
+        return track        

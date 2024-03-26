@@ -343,7 +343,7 @@ class track:
         INPUT:
         ---
         tr1,tr2: list
-            ["x0", "y0", "z0", "vx", "vy", "vz", "t"])
+            ["x0", "y0", "z0", "vx", "vy", "vz", "t0"])
             
         return:
         ---
@@ -506,5 +506,8 @@ class vertex:
         # - Seed starting point (Higher priority to ones closer to the IP)
         # - Seed track uncertainty
         # - Number of compatible tracks
+        # score = 10*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.1*y0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
         score = 3*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.1*y0 + 0.1*z0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
+        score = 10*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed  -50*N_compatible_tracks
+
         return score

@@ -38,6 +38,7 @@ class VertexFitter:
             "cut_vertex_TrackChi2Reduced": -1,        # NOT USED
             "cut_vertex_TrackAddDist": 350,   
             "cut_vertex_TrackAddChi2": 20,   
+            "cut_vertex_TrackDropChi2": 20,   
             "cut_vertex_VertexChi2Reduced": 6,   
         }
 
@@ -77,6 +78,13 @@ class VertexFitter:
             vertex_chi2 = vertex_fit.fval 
             vertex_tracks = tracks_found      
             self.vertices.append(datatypes.Vertex(*vertex_location, vertex_cov, vertex_chi2, vertex_tracks))
+
+            if self.debug:
+                vertex_cov_xzt = copy.copy(vertex_cov)
+                vertex_cov_xzt = np.delete(vertex_cov_xzt, 1,0)
+                vertex_cov_xzt = np.delete(vertex_cov_xzt, 1,1)
+                tracks_chi2 = [Util.track.chi2_point_track(vertex_location, track, vertex_cov_xzt) for track in tracks_found]
+                print(tracks_chi2)
 
             # Finally, remove used tracks
             self.remove_related_seeds(tracks_found)
@@ -132,14 +140,15 @@ class VertexFitter:
                 or ((m.fval-vertex_chi2)>self.parameters["cut_vertex_TrackAddChi2"]):
                 if self.debug: print(f"  * Track [{info.track_ind}] removed from vertex fit. Fit valid: {m.valid}; vertex chi2_r {m.fval/ndof:.2f}; vertex chi2 increment {m.fval-vertex_chi2 :.2f}")                                   
                 tracks_found.pop(-1)
+                ndof = 3*len(tracks_found)-4
                 continue   
 
-            if self.debug: print(f" -> Track [{info.track_ind}] added to vertex. Vertex chi2_r {m.fval/ndof:.2f}; vertex chi2 increment {m.fval-vertex_chi2 :.2f}. Track: {tracks[info.track_ind][:8]}") 
             m_final=m
-            ndof = 3*len(tracks_found)-4
             vertex_location = list(m.values)
             vertex_err = list(m.values)
+            if self.debug: print(f" -> Track [{info.track_ind}] added to vertex. Vertex chi2_r {m.fval/ndof:.2f}; vertex chi2 increment {m.fval-vertex_chi2 :.2f}. Track: {tracks[info.track_ind][:8]}") 
             vertex_chi2 = m_final.fval
+
 
 
             # Update the track info  
@@ -152,7 +161,7 @@ class VertexFitter:
                 self.tracks_remaining_info[j] = self.trackinfo(ind, chi2_track, chi2, dist)
 
         tracks_found_inds = [track.ind for track in tracks_found]
-        if self.debug: print(f"Vertex found! track indices: {tracks_found_inds} \n Chi2_r: {vertex_chi2/ndof}; {m_final.values}")
+        if self.debug: print(f"Vertex found! track indices: {tracks_found_inds} \n Chi2_r: {vertex_chi2/ndof}; {m_final.values}; Uncertainty: {m_final.errors}")
 
         return tracks_found, m_final
 
@@ -209,7 +218,9 @@ class VertexFitter:
                     if k in [i,j]:
                         continue
                     dist = Util.track.distance_to_point(tracks[k],midpoint)
-                    if dist<self.parameters["cut_vertex_TrackAddDist"]:
+                    if dist<self.parameters["cut_vertex_TrackAddDist"]: #and \
+                        # Util.track.chi2_point_track(midpoint,tracks[k])<self.parameters["cut_vertex_TrackAddChi2"]*1.5:
+
                         N_compatible_tracks = N_compatible_tracks + 1
                         N_compatible_hits += len(tracks[k].hits)
                         N_compatible_track_distance += dist
@@ -224,6 +235,8 @@ class VertexFitter:
         # Rank them reversely
         seeds.sort(key=lambda seed: seed.score, reverse=True)
         self.seeds = seeds
+
+        return seeds
 
 
     def fit(self, tracks, guess, hesse=False):
