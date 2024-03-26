@@ -94,6 +94,7 @@ class VertexFitter:
         if (not m.valid) or (m.fval>self.parameters["cut_vertex_SeedChi2"]):
             if self.debug: print(f"  * Seed failed. Seed fit result valid: {m.valid}, seed chi2 {m.fval}")
             return [], []        
+        ndof = 3*len(tracks_found)-4
         vertex_location = np.array(m.values)
         vertex_err = np.array(m.errors)
         vertex_chi2 = m.fval
@@ -119,7 +120,7 @@ class VertexFitter:
             if info.track_ind in seed_inds:
                 continue
             # Continue if track is too far from the seed
-            if (info.track_vertex_chi2 > self.parameters["cut_vertex_TrackAddChi2"]) or\
+            if (info.track_vertex_chi2 > self.parameters["cut_vertex_TrackAddChi2"]) and\
                (info.track_vertex_dist > self.parameters["cut_vertex_TrackAddDist"]):
                 if self.debug: print(f"  * Track [{info.track_ind}] too far from vertex. Track dist to vertex: {info.track_vertex_chi2:.2f}, track chi2 to vertex: {info.track_vertex_dist:.2f}")
                 continue
@@ -135,7 +136,10 @@ class VertexFitter:
 
             if self.debug: print(f" -> Track [{info.track_ind}] added to vertex. Vertex chi2_r {m.fval/ndof:.2f}; vertex chi2 increment {m.fval-vertex_chi2 :.2f}. Track: {tracks[info.track_ind][:8]}") 
             m_final=m
+            ndof = 3*len(tracks_found)-4
             vertex_location = list(m.values)
+            vertex_err = list(m.values)
+            vertex_chi2 = m_final.fval
 
 
             # Update the track info  
@@ -148,7 +152,7 @@ class VertexFitter:
                 self.tracks_remaining_info[j] = self.trackinfo(ind, chi2_track, chi2, dist)
 
         tracks_found_inds = [track.ind for track in tracks_found]
-        if self.debug: print(f"Vertex found! track indices: {tracks_found_inds} \n Chi2: {m.fval}; {m_final.values}")
+        if self.debug: print(f"Vertex found! track indices: {tracks_found_inds} \n Chi2_r: {vertex_chi2/ndof}; {m_final.values}")
 
         return tracks_found, m_final
 
@@ -190,6 +194,7 @@ class VertexFitter:
  
                 # Cut on seed chi2 (estimated)
                 midpoint_chi2 = Util.track.chi2_point_track(midpoint, tracks[i])+ Util.track.chi2_point_track(midpoint, tracks[j])
+                midpoint_err_sum = np.sqrt(np.sum(np.diag(Util.track.cov_point_track(midpoint, tracks[i]))+ np.diag(Util.track.cov_point_track(midpoint, tracks[j]))))
                 if midpoint_chi2>self.parameters["cut_vertex_SeedChi2"]:
                     continue
                 seed_track_unc = np.sum(np.diag(tracks[i].cov)) + np.sum(np.diag(tracks[j].cov))
@@ -198,6 +203,7 @@ class VertexFitter:
 
                 # Check number of compatible tracks
                 N_compatible_tracks = 0
+                N_compatible_track_distance = 0
                 N_compatible_hits = 0
                 for k in range(len(tracks)):
                     if k in [i,j]:
@@ -206,17 +212,16 @@ class VertexFitter:
                     if dist<self.parameters["cut_vertex_TrackAddDist"]:
                         N_compatible_tracks = N_compatible_tracks + 1
                         N_compatible_hits += len(tracks[k].hits)
+                        N_compatible_track_distance += dist
+                N_compatible_track_distance = N_compatible_track_distance/N_compatible_tracks if N_compatible_tracks>0 else N_compatible_track_distance
 
                 ## VertexSeed = namedtuple("VertexSeed",["x0", "y0", "z0", "t0", "cov", "chi2", "dist", "Ntracks", "trackind1","trackind2","score"])
-                seed_score = Util.vertex.score_seed([*midpoint, midpoint_chi2, dist_seed, N_compatible_tracks, N_compatible_hits, seed_track_unc, seed_track_chi2])
+                seed_score = Util.vertex.score_seed([*midpoint, midpoint_chi2, midpoint_err_sum, dist_seed, N_compatible_tracks, N_compatible_track_distance, seed_track_unc, seed_track_chi2])
                 seed_found = datatypes.VertexSeed(*midpoint, 0, midpoint_chi2, dist_seed, N_compatible_tracks, i, j, seed_score)
                 seeds.append(seed_found)
 
         # Sort the seeds
-        # Rank them with two keys
-        # First the number of tracks that are compatible with this seed (seed.Ntracks, ascending)
-        # Second the chi-square between two tracks of this seed (seed.chi2, descending)
-        # The order is reversed because the seeds are used reversely. the last seed is  used first
+        # Rank them reversely
         seeds.sort(key=lambda seed: seed.score, reverse=True)
         self.seeds = seeds
 

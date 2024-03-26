@@ -257,6 +257,27 @@ class track:
             HitsLayerGrouped[hit.layer].append(hit)
         return HitsLayerGrouped  
 
+    @staticmethod 
+    def cov_point_track(point, track, point_unc=None):
+        x,y,z,t = point
+        dy =  y - track.y0
+        # Covariance
+        jac=np.array([[ 	1,  0,	0,  dy,   0,    0],
+                        [ 	0,  1,  0,   0,  dy,    0],
+                        [	0,  0, 	1,   0,   0,    dy]])
+        covariance = jac @ track.cov @ jac.T     
+
+        # Add the uncertainty of the point
+        if point_unc is not None:
+            if np.array(point_unc).ndim==1:
+                x_err,y_err,z_err,t_err = point_unc
+                covariance += np.diag(np.array([x_err, z_err, t_err])**2)
+            elif np.array(point_unc).ndim==2:
+                covariance += point_unc   
+
+        return    covariance
+
+
     @staticmethod
     def chi2_point_track(point, track, point_unc=None):
         """ 
@@ -476,13 +497,14 @@ class vertex:
 
         Lower score means better seed quality and should be used first.
         """
-        x0,y0,z0,t0, midpoint_chi2, dist_seed, N_compatible_tracks, N_compatible_hits, seed_track_unc, seed_track_chi2 = seed_par
+        x0,y0,z0,t0, midpoint_chi2, midpoint_err_sum, dist_seed, N_compatible_tracks, N_compatible_track_distance, seed_track_unc, seed_track_chi2 = seed_par
 
         # Score based on the following items:
         # - Seed chi2
         # - Seed distance
+        # - Seed uncertainty
         # - Seed starting point (Higher priority to ones closer to the IP)
         # - Seed track uncertainty
         # - Number of compatible tracks
-        score = 3*midpoint_chi2 + dist_seed + 0.1*y0 + 0.2*seed_track_unc -20*N_compatible_tracks
+        score = 3*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.1*y0 + 0.1*z0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
         return score
