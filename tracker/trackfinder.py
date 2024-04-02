@@ -77,7 +77,13 @@ class TrackFinder:
                 # If not enough hits, drop this track
                 if len(hits_found)<self.parameters["cut_track_TrackNHitsMin"]:
                     if self.debug: print(f"  fitting failed, not enough hits. Hits found: {len(hits_found)}")
-                    continue                
+                    continue     
+                # Cut on speed
+                state = kalman_result.Xsm[0]
+                speed = np.linalg.norm([state[3]/state[5], state[4]/state[5], 1/state[5]])  
+                if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
+                    if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
+                    continue                           
 
                 # # ------------------------------------
                 # # Round 3: Run filter and smooth again without dropping
@@ -92,10 +98,11 @@ class TrackFinder:
                 # if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
                 #     if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
                 #     continue
-
                 # # ------------------------------------
                 # # Finally, prepare the output
                 # track_output = self.prepare_output(kalman_result, hits_found, track_ind = len(self.tracks))  
+
+
 
 
                 # ------------------------------------
@@ -111,10 +118,34 @@ class TrackFinder:
                 if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
                     if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
                     continue
-
                 # ------------------------------------
                 # Finally, prepare the output
-                track_output = self.prepare_output_back(kalman_result, hits_found, track_ind = len(self.tracks))                  
+                track_output = self.prepare_output_back(kalman_result, hits_found, track_ind = len(self.tracks))    
+
+
+                
+                # # ------------------------------------
+                # # Round 3: Run filter and smooth again with initial state
+                # # Set initial state using first two hits
+                # m0, V0, H0, Xf0, Cf0, Rf0 = Util.track.init_state([hits_found[0],hits_found[-1]]) # Use the first two hits to initiate
+                # kalman_result =Util.track.run_kf(hits_found, initial_state=None, initial_cov=None, multiple_scattering=True)
+                # if self.debug: 
+                #     print(f" Track found. Added hits:") 
+                #     for t in hits_found:
+                #         print("  ", t)
+                # # Cut on speed
+                # state = kalman_result.Xsm[0]
+                # speed = np.linalg.norm([state[3]/state[5], state[4]/state[5], 1/state[5]])  
+                # if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
+                #     if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
+                #     continue
+                # # ------------------------------------
+                # # Finally, prepare the output
+                # track_output = self.prepare_output_v2(kalman_result, hits_found, track_ind = len(self.tracks))          
+
+
+
+
 
 
 
@@ -292,7 +323,7 @@ class TrackFinder:
             dy = step_this - step_pre # Step size
 
             Ax, Az, At = kf_find.Xf[3:]
-            velocity = [Ax/At, 1/At, Az/At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering            
+            velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering            
             _, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_thislayer[0], dy, velocity=velocity) # Calculate matrices. Only need to do once for all this in the same layer
             kf_find.update_matrix(Vi, Hi, Fi, Qi) # pass matrices to KF
 
@@ -380,7 +411,7 @@ class TrackFinder:
         dy = step_this - step_pre # Step size
         step_pre = step_this
         Ax, Az, At = kf_find.Xf[3:]
-        velocity = [Ax/At, 1/At, Az/At]     if self.parameters["fit_track_MultipleScattering"] else None   # Velocity is needed for multiple scattering        
+        velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None   # Velocity is needed for multiple scattering        
         _, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_thislayer[0], dy, velocity=velocity) # Calculate matrices. Only need to do once for all this in the same layer
         kf_find.update_matrix(Vi, Hi, Fi, Qi) # pass matrices to KF
 
@@ -466,7 +497,7 @@ class TrackFinder:
             dy  = hits[i].y-hits[i-1].y
 
             Ax, Az, At = kf.Xf[-1][3:]
-            velocity = [Ax/At, 1/At, Az/At]     if self.parameters["fit_track_MultipleScattering"] else None        # Velocity is needed for multiple scattering
+            velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None        # Velocity is needed for multiple scattering
             mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hit, dy, velocity=velocity)
             
             # pass to KF
@@ -501,11 +532,11 @@ class TrackFinder:
         """
         # propagate the KF result from the second hit to the first hit
         Ax, Az, At = kalman_result.Xsm[0][3:]
-        velocity = [Ax/At, 1/At, Az/At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering      
+        velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering      
 
         mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], hits_found[0].y - hits_found[1].y, velocity=velocity)
         Xp_i = Fi@kalman_result.Xsm[0]
-        Cp_i = Fi@kalman_result.Csm[0]@Fi.T #+ Qi 
+        Cp_i = Fi@kalman_result.Csm[0]@Fi.T + Qi 
 
         rp_i = mi - Hi@Xp_i
         Rp_i = Vi + Hi@Cp_i@Hi.T
@@ -544,6 +575,44 @@ class TrackFinder:
         track = datatypes.Track(x0, y0, z0, t0, Ax, Ay, Az, At, cov, chi2, ind, hits, hits_filtered)
         return track
 
+    def prepare_output_v2(self, kalman_result, hits_found, track_ind=0):
+        """ 
+        Turn the Kalman filter result into a Track object
+
+        """
+        # propagate the KF result from the second hit to the first hit
+        Ax, Az, At = kalman_result.Xsm[0][3:]
+        velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering      
+
+        state_predicted_step_0 = kalman_result.Xsm[0]
+        statecov_predicted_step_0 = kalman_result.Csm[0]
+
+
+        # Add the covariance of one additional layer:
+        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], -1.5, velocity=velocity)
+        cov = statecov_predicted_step_0 + Qi
+        chi2 = kalman_result.chift_total
+        ind = track_ind
+        hits = [hit.ind for hit in hits_found]
+
+
+        
+        x0 = state_predicted_step_0[0]
+        z0 = state_predicted_step_0[1]
+        t0 = state_predicted_step_0[2]
+        Ax = state_predicted_step_0[3]
+        Az = state_predicted_step_0[4]
+        At = state_predicted_step_0[5]
+
+        y0 = hits_found[0].y
+        Ay = 1 # Slope of Y vs Y, which is always 1
+
+        hits_filtered = [[xsm[0], hit.y, xsm[1], xsm[2]] for hit,xsm in zip(hits_found[0:], kalman_result.Xsm)]
+
+        # Track is a namedtuple("Track", ["x0", "y0", "z0", "t", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
+        track = datatypes.Track(x0, y0, z0, t0, Ax, Ay, Az, At, cov, chi2, ind, hits, hits_filtered)
+        return track        
+
 
     def prepare_output_back(self, kalman_result, hits_found_temp, track_ind=0):
         """ 
@@ -553,7 +622,7 @@ class TrackFinder:
         # propagate the KF result from the second hit to the first hit
         hits_found = hits_found_temp[::-1]
         Ax, Az, At = kalman_result.Xsm[0][3:]
-        velocity = [Ax/At, 1/At, Az/At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering      
+        velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering      
 
         mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], hits_found[0].y - hits_found[1].y, velocity=velocity)
         state_predicted_step_0 = Fi@kalman_result.Xsm[0]

@@ -128,7 +128,7 @@ class VertexFitter:
 
     def find_once(self, tracks, seed):
         # Add hits from the seed first
-        if self.debug: print("--- New seed for vertex --- \n  Seed", seed)
+        if self.debug: print("\n--- New seed for vertex --- \n  Seed", seed)
         seed_inds = [seed.trackind1, seed.trackind2]
         seed_midpoint = np.array([seed.x0, seed.y0, seed.z0, seed.t0])
         tracks_found = [tracks[seed_inds[0]], tracks[seed_inds[1]]]

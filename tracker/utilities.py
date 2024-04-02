@@ -1,4 +1,5 @@
 from collections import namedtuple
+import copy
 
 import numpy as np
 from numpy.linalg import inv
@@ -136,64 +137,91 @@ class track:
                     [0, 0, 0, 1, 0, 0],
                     [0, 0, 0, 0, 1, 0],
                     [0, 0, 0, 0, 0, 1]])
-        Qi = track.update_Q(dy, velocity) if velocity is not None else 0
+        Qi = track.update_Q(dy, *velocity) if velocity is not None else 0
         return mi, Vi, Hi, Fi, Qi
 
+    # @staticmethod
+    # def update_Q(dy, velocity):
+    #     mag=np.linalg.norm(velocity)
+    #     a,b,c = np.array(velocity)/mag
+
+    #     # precalculate some numbers
+    #     b2 = b**2
+    #     a2 = a**2
+    #     c2 = c**2
+    #     dy2 = dy*dy
+    #     b4 = np.power(b, 4)
+    #     mag2 = np.power(mag , 2)
+
+    #     # Force the speed to be speed of light
+    #     mag=29.97
+    #     mag2=mag**2
+    #     p=500 # [MeV] Momentum 
+
+    #     Q_block1 = np.array([[(b2 +a2) / b4,   a * c / b4 , a / (mag  * b4)],
+    #                         [   a * c / b4, (c2 + b2) / b4, c / (mag  * b4)],
+    #                         [  a /(mag*b4), c / (mag * b4), (1 - b2) / (mag2 * b4)]])
+
+    #     Q_block2 = copy.copy(Q_block1)                          
+    #     Q_block2[0,2]*=mag
+    #     Q_block2[1,2]*=mag
+    #     Q_block2[2,2]*=mag
+
+    #     Q_block3 = copy.copy(Q_block1)                          
+    #     Q_block3[2,0]*=mag
+    #     Q_block3[2,1]*=mag
+    #     Q_block3[2,2]*=mag 
+
+    #     Q_block4 = copy.copy(Q_block1)                          
+    #     Q_block4[0,2]*=mag
+    #     Q_block4[1,2]*=mag
+    #     Q_block4[2,0]*=mag
+    #     Q_block4[2,1]*=mag
+    #     Q_block4[2,2]*=mag2         
+
+
+
+    #     Q = np.block([[Q_block1*dy2, Q_block2*dy],
+    #                   [Q_block3*dy , Q_block4]])
+
+    #     sin_theta = np.abs(b)
+    #     L_Al =  0.4
+    #     L_Sc = 1.0 # [cm] Scintillator
+    #     L_r_Al = 24.0111/2.7; # [cm] Radiation length Aluminum/ density of Aluminum
+    #     L_r_Sc = 43; # [cm] Radiation length Scintillator (Saint-Gobain paper)
+
+    #     L_rad = L_Al / L_r_Al + L_Sc / L_r_Sc; # [rad lengths] orthogonal to Layer
+    #     L_rad /= sin_theta; # [rad lengths] in direction of track
+
+    #     sigma_ms = 13.6 * np.sqrt(L_rad) * (1 + 0.038 * np.log(L_rad)); #
+    #     sigma_ms /= p # [MeV] Divided by 1000 MeV
+
+    #     Q = Q*sigma_ms**2
+        
+    #     return Q
+
     @staticmethod
-    def update_Q(dy, velocity):
-        mag=np.linalg.norm(velocity)
-        a,b,c = np.array(velocity)/mag
+    def update_Q(dy, Ax, Az, Ay):
 
         # precalculate some numbers
-        b2 = b**2
-        a2 = a**2
-        dy2 = dy*dy
-        b4 = np.power(b, 4)
-        mag2 = np.power(mag , 2)
-
+        Ax2 = Ax**2
+        Az2 = Az**2
+        dy2 = dy**2
+        P4P5 = (1+Ax2+Az2)
         # Force the speed to be speed of light
         mag=29.97
         mag2=mag**2
-        p=1000 # [MeV] Momentum 
+        p=500 # [MeV] Momentum 
 
-        Q=np.array([[dy2 * (b2 +a2) / b4,
-                        dy2 * a / (mag * b4),
-                        dy2 * a * c / b4,
-                        mag  * dy / b,
-                        -mag  * dy * a / (b2),
-                        0,],
-                    [dy2 * a / (mag  * b4),
-                        dy2 * (1 - b2) / (mag2 * b4),
-                        dy2 * c / (mag  * b4),
-                        dy * a / b,
-                        -dy * (1 - b2) / (b2),
-                        dy * c / b,],
-                    [dy2 * a * c / b4,
-                        dy2 * c / (mag  * b4),
-                        dy2 * (c * c + b2) / b4,
-                        0,
-                        -mag  * dy * c / (b2),
-                        mag  * dy / b,],
-                    [mag  * dy / b,
-                        dy * a / b,
-                        0,
-                        mag2 * (1 -a2),
-                        -mag2 * (a * b),
-                        -mag2 * (a * c),],
-                    [-mag  * dy * a / (b2),
-                        -dy * (1 - b2) / (b2),
-                        -mag  * dy * c / (b2),
-                        -mag2 * (a * b),
-                        mag2 * (1 - b2),
-                        -mag2 * (b * c),],
-                    [0,
-                        dy * c / b,
-                        mag  * dy / b,
-                        -mag2 * (a * c),
-                        -mag2 * (b * c),
-                        mag2 * (1 - c * c)]])
+        Q_block1 = np.array([[(1+Ax2)*P4P5,  Ax*Az*P4P5 , (Ax-1)*P4P5**1.5 / mag],
+                             [ Ax*Az*P4P5,  (1+Az2)*P4P5, (Az-1)*P4P5**1.5 / mag],
+                             [ (Ax-1)*P4P5**1.5 / mag, (Az-1)*P4P5**1.5 / mag, (Ax**2+Az**2)/mag**2 *P4P5]])
 
-        sin_theta = np.abs(b)
+
+        Q = np.block([[Q_block1*dy2, Q_block1*dy],
+                      [Q_block1*dy , Q_block1]])
+
+        sin_theta = np.power(Ax**2+Az**2+1, -1/2)
         L_Al =  0.4
         L_Sc = 1.0 # [cm] Scintillator
         L_r_Al = 24.0111/2.7; # [cm] Radiation length Aluminum/ density of Aluminum
@@ -210,17 +238,23 @@ class track:
         return Q
 
 
+
     @staticmethod
-    def run_kf(hits, multiple_scattering = False):
+    def run_kf(hits, initial_state=None, initial_cov=None, multiple_scattering = False):
         kf = KF.KalmanFilter()
 
         # Set initial state using first two hits
         m0, V0, H0, Xf0, Cf0, Rf0 = track.init_state(hits) # Use the first two hits to initiate
+        if initial_state is not None:
+            Xf0 = initial_state
+        if initial_cov is not None:
+            Cf0 = initial_cov        
         kf.init_filter( m0, V0, H0, Xf0, Cf0, Rf0)
         
 
         # Feed all measurements to KF
-        for i in range(2,len(hits)):   
+        start_ind = 2 if initial_state is None else 1
+        for i in range(start_ind,len(hits)):   
             # get updated matrix
             hit = hits[i]
             dy  = hits[i].y-hits[i-1].y
@@ -231,7 +265,7 @@ class track:
             # Or, use this 
             else:
                 Ax, Az, At = kf.Xf[-1][3:]
-                velocity = [Ax/At, 1/At, Az/At]
+                velocity = [Ax, Az, At] #[Ax/At, 1/At, Az/At]
                 mi, Vi, Hi, Fi, Qi = track.add_measurement(hit, dy, velocity=velocity)
             
             # pass to KF

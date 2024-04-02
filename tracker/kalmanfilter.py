@@ -63,7 +63,10 @@ class KalmanFilterFind():
         Rf = (self.identity_measure - self.Hi@K).dot(self.Vi)
         
         # Chi2 contribution
-        chi2_filtered = rf.T @ inv(Rf) @ rf
+        try:
+            chi2_filtered = rf.T @ inv(Rf) @ rf
+        except:
+            chi2_filtered = 0
 
 
         # Update the internal state
