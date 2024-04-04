@@ -86,7 +86,7 @@ class VertexFitter:
                     if self.debug: print("Not enough tracks for this seed")
                     break 
                 # Fit again
-                m = self.fit(tracks_found, vertex_location, hesse=False)
+                vertex_fit = self.fit(tracks_found, vertex_location, hesse=False)
                 vertex_location =  np.array(vertex_fit.values) 
                 vertex_cov =  np.array(vertex_fit.covariance) 
                 vertex_chi2 = vertex_fit.fval 
@@ -236,10 +236,21 @@ class VertexFitter:
                     continue
  
                 # Cut on seed chi2 (estimated)
-                midpoint_chi2 = Util.track.chi2_point_track(midpoint, tracks[i])+ Util.track.chi2_point_track(midpoint, tracks[j])
-                midpoint_err_sum = np.sqrt(np.sum(np.diag(Util.track.cov_point_track(midpoint, tracks[i]))+ np.diag(Util.track.cov_point_track(midpoint, tracks[j]))))
-                if midpoint_chi2>self.parameters["cut_vertex_SeedChi2"]:
-                    continue
+                # midpoint_chi2 = Util.track.chi2_point_track(midpoint, tracks[i])+ Util.track.chi2_point_track(midpoint, tracks[j])
+                # midpoint_err_sum = np.sqrt(np.sum(np.diag(Util.track.cov_point_track(midpoint, tracks[i]))+ np.diag(Util.track.cov_point_track(midpoint, tracks[j]))))
+                # if midpoint_chi2>self.parameters["cut_vertex_SeedChi2"]:
+                #     continue
+
+                # Cut on seed chi2 (fit)
+                # Fit the seed
+                m = self.fit([tracks[i], tracks[j]], midpoint, hesse=False)
+                if (not m.valid) or (m.fval>self.parameters["cut_vertex_SeedChi2"]):
+                    if self.debug: print(f"  * Seed failed, chi2 too large. Seed fit result valid: {m.valid}, seed chi2 {m.fval}")
+                    continue 
+                midpoint = list(m.values)
+                midpoint_chi2 = m.fval
+                midpoint_err_sum = 0
+
                 seed_track_unc = np.sum(np.diag(tracks[i].cov)) + np.sum(np.diag(tracks[j].cov))
                 seed_track_chi2 =tracks[i].chi2+tracks[j].chi2
                 
@@ -267,7 +278,8 @@ class VertexFitter:
 
         # Sort the seeds
         # Rank them reversely
-        seeds.sort(key=lambda seed: (-seed.Ntracks, seed.score), reverse=True)
+        # seeds.sort(key=lambda seed: (-seed.Ntracks, seed.score), reverse=True)
+        seeds.sort(key=lambda seed: seed.score, reverse=True)
         self.seeds = seeds
 
         return seeds

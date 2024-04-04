@@ -18,14 +18,16 @@ class TrackFinder:
         self.method = method # {"recursive", "greedy"}
         self.debug = debug
         self.parameters={
-            "cut_track_SeedSpeed": 6,          # in the unit of c. Limit the maximum speed formed by the seed.
+            "cut_track_SeedSpeed": 1,          # in the unit of c. Limit the maximum speed formed by the seed.
             "cut_track_HitAddChi2": 15,          # Only used when method is "greedy"
             "cut_track_HitDropChi2": 15,         # Set to -1 to turn off
             "cut_track_HitProjectionSigma": 10,   # Number of sigmas
             "cut_track_TrackChi2Reduced": 7,
             "cut_track_TrackSpeed": [15,60], # [cm/ns], (speed_low, speed_high). 30 is speed of light
             "cut_track_TrackNHitsMin": 3,
-            "fit_track_MultipleScattering": False
+            "fit_track_MultipleScattering": False,
+            "fit_track_Method": "backward", # choose one of {"backward", "forward", "forward-seed"}
+            "fit_track_LeastSquareIters":2, # No need to change
         }
 
     def run(self, hits):
@@ -42,6 +44,7 @@ class TrackFinder:
             return self.tracks
 
         for track_TrackNHitsMin in range(self.parameters["cut_track_TrackNHitsMin"], self.total_layers+1)[::-1]:
+            if self.debug: print(f"\n\n================Looking for track with {track_TrackNHitsMin} hits=============")
             self.seeds = self.seeding(self.hits)
             self.hits_found_all = []
             while len(self.seeds)>0:
@@ -75,79 +78,58 @@ class TrackFinder:
                 for ind in inds_dropped:
                     hits_found.pop(ind)
                 # If not enough hits, drop this track
-                if len(hits_found)<self.parameters["cut_track_TrackNHitsMin"]:
+                if len(hits_found)<track_TrackNHitsMin:
                     if self.debug: print(f"  fitting failed, not enough hits. Hits found: {len(hits_found)}")
-                    continue     
+                    continue               
+
+
+                # # ------------------------------------
+                # # Round 3: Run filter again on found hits
+                if self.parameters["fit_track_Method"]=="backward": 
+                    # Run filter backwards, no smoothing
+                    kalman_result, inds_dropped = self.filter_smooth(hits_found[::-1], drop_chi2=-1)   # This time we run the filter backwards
+                    # prepare the output
+                    track_output = self.prepare_output_back(kalman_result, hits_found, track_ind = len(self.tracks))                  
+                elif self.parameters["fit_track_Method"]=="forward":   
+                    # Run filter forward with smoothing, use first two hits to initialize                      
+                    kalman_result, inds_dropped = self.filter_smooth(hits_found, drop_chi2=-1)  
+                    # prepare the output
+                    track_output = self.prepare_output(kalman_result, hits_found, track_ind = len(self.tracks))  
+
+                elif self.parameters["fit_track_Method"]=="forward-seed": 
+                    # Run filter forward with smoothing, use first and last hit to initialize                      
+                    # Set initial state using first and last hits
+                    m0, V0, H0, Xf0, Cf0, Rf0 = Util.track.init_state([hits_found[-1],hits_found[0]]) # Use the first two hits to initiate
+                    kalman_result =Util.track.run_kf(hits_found, initial_state=Xf0, initial_cov=Cf0, multiple_scattering=True)
+                    # Finally, prepare the output
+                    track_output = self.prepare_output_v2(kalman_result, hits_found, track_ind = len(self.tracks))   
+
+                elif self.parameters["fit_track_Method"]=="least-square": 
+                    # Run least square fit                    
+                    guess = Util.track.guess_track(hits_found)
+                    fit_ls = Util.track.fit_track_scattering(hits_found,guess) if self.parameters["fit_track_MultipleScattering"] else Util.track.fit_track(hits_found,guess) 
+                    popt = fit_ls.values
+                    pcov = fit_ls.covariance
+                    chi2 = fit_ls.fval
+                    # Finally, prepare the output
+                    track_output = self.prepare_output_ls(popt, pcov, chi2, hits_found, track_ind = len(self.tracks))  
+                elif self.parameters["fit_track_Method"]=="least-square-ana": 
+                    # Run analytical least square fit (less iteration during minimization)                      
+                    popt,pcov,chi2 = Util.track.fit_track_ana(hits_found, scattering = self.parameters["fit_track_MultipleScattering"], iters = self.parameters["fit_track_LeastSquareIters"]) 
+                    # Finally, prepare the output
+                    track_output = self.prepare_output_ls(popt, pcov, chi2, hits_found, track_ind = len(self.tracks))                                                                                   
+
+
                 # Cut on speed
-                state = kalman_result.Xsm[0]
-                speed = np.linalg.norm([state[3]/state[5], state[4]/state[5], 1/state[5]])  
+                state = track_output # Track is a namedtuple("Track", ["x0", "y0", "z0", "t", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
+                speed = np.linalg.norm([state.Ax/state.At, state.Az/state.At, 1/state.At])  
                 if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
                     if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
-                    continue                           
-
-                # # ------------------------------------
-                # # Round 3: Run filter and smooth again without dropping
-                # kalman_result, inds_dropped = self.filter_smooth(hits_found, drop_chi2=-1)  
-                # if self.debug: 
-                #     print(f" Track found. Added hits:") 
-                #     for t in hits_found:
-                #         print("  ", t)
-                # # Cut on speed
-                # state = kalman_result.Xsm[0]
-                # speed = np.linalg.norm([state[3]/state[5], state[4]/state[5], 1/state[5]])  
-                # if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
-                #     if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
-                #     continue
-                # # ------------------------------------
-                # # Finally, prepare the output
-                # track_output = self.prepare_output(kalman_result, hits_found, track_ind = len(self.tracks))  
-
-
-
-
-                # ------------------------------------
-                # Round 3: Run filter and smooth again without dropping
-                kalman_result, inds_dropped = self.filter_smooth(hits_found[::-1], drop_chi2=-1)   # This time we run the filter backwards
-                if self.debug: 
+                    continue    
+                elif self.debug: 
                     print(f" Track found. Added hits:") 
                     for t in hits_found:
-                        print("  ", t)
-                # Cut on speed
-                state = kalman_result.Xsm[0]
-                speed = np.linalg.norm([state[3]/state[5], state[4]/state[5], 1/state[5]])  
-                if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
-                    if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
-                    continue
-                # ------------------------------------
-                # Finally, prepare the output
-                track_output = self.prepare_output_back(kalman_result, hits_found, track_ind = len(self.tracks))    
-
-
-                
-                # # ------------------------------------
-                # # Round 3: Run filter and smooth again with initial state
-                # # Set initial state using first two hits
-                # m0, V0, H0, Xf0, Cf0, Rf0 = Util.track.init_state([hits_found[0],hits_found[-1]]) # Use the first two hits to initiate
-                # kalman_result =Util.track.run_kf(hits_found, initial_state=None, initial_cov=None, multiple_scattering=True)
-                # if self.debug: 
-                #     print(f" Track found. Added hits:") 
-                #     for t in hits_found:
-                #         print("  ", t)
-                # # Cut on speed
-                # state = kalman_result.Xsm[0]
-                # speed = np.linalg.norm([state[3]/state[5], state[4]/state[5], 1/state[5]])  
-                # if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
-                #     if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
-                #     continue
-                # # ------------------------------------
-                # # Finally, prepare the output
-                # track_output = self.prepare_output_v2(kalman_result, hits_found, track_ind = len(self.tracks))          
-
-
-
-
-
-
+                        print("  ", t)                                      
 
 
                 self.tracks.append(track_output)   
@@ -583,7 +565,6 @@ class TrackFinder:
         # propagate the KF result from the second hit to the first hit
         Ax, Az, At = kalman_result.Xsm[0][3:]
         velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering      
-
         state_predicted_step_0 = kalman_result.Xsm[0]
         statecov_predicted_step_0 = kalman_result.Csm[0]
 
@@ -658,3 +639,15 @@ class TrackFinder:
         # Track is a namedtuple("Track", ["x0", "y0", "z0", "t", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
         track = datatypes.Track(x0, y0, z0, t0, Ax, Ay, Az, At, cov, chi2, ind, hits, hits_filtered)
         return track        
+
+
+    def prepare_output_ls(self, popt, pcov, chi2, hits_found, track_ind):
+        x0, z0, t0, Ax, Az, At  = popt
+        y0 = hits_found[0].y
+        Ay = 1
+        hits = [hit.ind for hit in hits_found[::-1]]        
+        hits_filtered=[[x0 + Ax*(hit.y-y0), hit.y, z0 + Az*(hit.y-y0), t0 + At*(hit.y-y0)] for hit in hits_found]
+        track = datatypes.Track(x0, y0, z0, t0, Ax, Ay, Az, At, pcov, chi2, track_ind, hits, hits_filtered)
+        return track             
+
+        

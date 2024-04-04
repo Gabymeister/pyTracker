@@ -206,16 +206,16 @@ class track:
         # precalculate some numbers
         Ax2 = Ax**2
         Az2 = Az**2
+        Ay2 = Ay**2
         dy2 = dy**2
         P4P5 = (1+Ax2+Az2)
         # Force the speed to be speed of light
         mag=29.97
-        mag2=mag**2
         p=500 # [MeV] Momentum 
 
-        Q_block1 = np.array([[(1+Ax2)*P4P5,  Ax*Az*P4P5 , (Ax-1)*P4P5**1.5 / mag],
-                             [ Ax*Az*P4P5,  (1+Az2)*P4P5, (Az-1)*P4P5**1.5 / mag],
-                             [ (Ax-1)*P4P5**1.5 / mag, (Az-1)*P4P5**1.5 / mag, (Ax**2+Az**2)/mag**2 *P4P5]])
+        Q_block1 = np.array([[(1+Ax2)*P4P5,  Ax*Az*P4P5 , (Ax-1)*P4P5*Ay],
+                             [ Ax*Az*P4P5,  (1+Az2)*P4P5, (Az-1)*P4P5*Ay],
+                             [ (Ax-1)*P4P5*Ay, (Az-1)*P4P5*Ay, (Ax2+Az2)*Ay2]])
 
 
         Q = np.block([[Q_block1*dy2, Q_block1*dy],
@@ -240,7 +240,7 @@ class track:
 
 
     @staticmethod
-    def run_kf(hits, initial_state=None, initial_cov=None, multiple_scattering = False):
+    def run_kf(hits, initial_state=None, initial_cov=None, multiple_scattering = False, propagate_state_0 = "False"):
         kf = KF.KalmanFilter()
 
         # Set initial state using first two hits
@@ -274,6 +274,7 @@ class track:
 
         # Filter backward
         kf.backward_smooth()
+
         return kf    
 
 
@@ -470,7 +471,7 @@ class track:
         z0_init = hits[0].z
         t0_init = hits[0].t
         
-        dy=hits[-1].t-hits[0].t
+        dy=hits[-1].y-hits[0].y
         Ax_init = (hits[-1].x-hits[0].x)/dy
         Az_init = (hits[-1].z-hits[0].z)/dy
         At_init = (hits[-1].t-hits[0].t)/dy
@@ -501,6 +502,83 @@ class track:
         return m  
 
 
+    @staticmethod
+    def fit_track_scattering(hits, guess):
+        x0_init, z0_init,t0_init,Ax_init,Az_init,At_init = guess
+
+        m = iminuit.Minuit(chi2_track_scattering(hits),x0=x0_init, z0=z0_init, t0=t0_init, Ax=Ax_init,Az=Az_init, At=At_init)
+        m.limits["x0"]=(-100000,100000)
+        m.limits["z0"]=(-100000,100000)
+        m.limits["t0"]=(-100,1e5)
+        m.limits["Ax"]=(-10,10) # Other
+        m.limits["Az"]=(-10,10)
+        m.limits["At"]=(0.001,0.2) # Beam direction; From MKS unit to cm/ns = 1e2/1e9=1e-7
+        m.errors["x0"]=0.1
+        m.errors["z0"]=0.1
+        m.errors["t0"]=0.1
+        m.errors["Ax"] = 0.0001
+        m.errors["At"] = 0.0001
+        m.errors["Az"] = 0.0001
+
+        m.migrad()  # run optimiser
+        m.hesse()   # run covariance estimator
+        
+        return m          
+
+
+
+    @staticmethod
+    def fit_track_ana(hits, scattering = False, iters = 2):
+        y0 = hits[0].y
+
+        X = np.array([hit.x for hit in hits])
+        Z = np.array([hit.z for hit in hits])
+        T = np.array([hit.t for hit in hits])
+        H = np.array([[1,hit.y-y0] for hit in hits])
+
+        if scattering is False:
+            Vx_inv = np.diag([1/hit.x_err for hit in hits ])
+            Vz_inv = np.diag([1/hit.z_err for hit in hits ])
+            Vt_inv = np.diag([1/hit.t_err for hit in hits ])
+        elif scattering is True:
+            if iters==0:
+                Param_all, Error_all = fit_track_ana(hits, scattering = False)
+            else:
+                iters-=1
+                Param_all, Error_all = fit_track_ana(hits, scattering = True, iters = iters)
+
+            # chi2_object = chi2_track_scattering(hits)
+            Vx, Vz = chi2_track_scattering(hits).get_cov(Param_all[3], Param_all[4])
+            Vx_inv = np.linalg.inv(Vx)
+            Vz_inv = np.linalg.inv(Vz)
+            Vt_inv = np.diag([1/hit.t_err for hit in hits ])
+
+
+
+        Error_x = np.linalg.inv(H.T @ Vx_inv @ H)
+        Param_x = Error_x @ (H.T @ Vx_inv @ X)
+        chi2_x = (X - H@Param_x).T @ Vx_inv @ (X - H@Param_x)
+
+        Error_z = np.linalg.inv(H.T @ Vz_inv @ H)
+        Param_z = Error_z @ (H.T @ Vz_inv @ Z)
+        chi2_z = (Z - H@Param_z).T @ Vz_inv @ (Z - H@Param_z)
+
+        Error_t = np.linalg.inv(H.T @ Vt_inv @ H)
+        Param_t = Error_t @ (H.T @ Vt_inv @ T)  
+        chi2_t = (T - H@Param_t).T @ Vt_inv @ (T - H@Param_t)
+
+        Error_all = np.array([[Error_x[0,0],           0,           0,Error_x[0,1],           0,             0],
+                                [           0,Error_z[0,0],           0,           0,Error_z[0,1],             0],
+                                [           0,           0,Error_t[0,0],           0,           0,  Error_t[0,1]],
+                                [Error_x[1,0],           0,           0,Error_x[1,1],           0,             0],
+                                [           0,Error_z[1,0],           0,           0,Error_z[1,1],             0],
+                                [           0,           0,Error_t[1,0],           0,           0,  Error_t[1,1]]])
+        Param_all = [Param_x[0],Param_z[0],Param_t[0], Param_x[1],Param_z[1],Param_t[1]]
+        chi2_all = chi2_x + chi2_z + chi2_t
+
+        return  Param_all, Error_all, chi2_all       
+
+
 # -------------------------------------
 # LS fit
 # ------------------------------------
@@ -522,6 +600,73 @@ class chi2_track:
         return error        
        
 
+
+# -------------------------------------
+# LS fit with multiple scattering
+# ------------------------------------
+
+import numpy as np
+class chi2_track_scattering:
+    def __init__(self, hits):
+        self.hits=hits
+        self.func_code = iminuit.util.make_func_code(['x0', 'z0', 't0', 'Ax', 'Az', 'At'])
+    def __call__(self, x0, z0, t0, Ax, Az, At):
+        chi2_distance = 0
+
+        cov_x, cov_z = self.get_cov(Ax, Az)
+        residuals = []
+
+        for hit in self.hits:
+            dy = (hit.y - self.hits[0].y)
+            model_x = x0 + Ax*dy
+            model_z = z0 + Az*dy
+            model_t = t0 + At*dy
+            residuals.append([model_x-hit.x, model_z-hit.z, model_t-hit.t])
+        t_err = [hit.t_err for hit in self.hits]
+
+        residuals=np.array(residuals)
+
+        chi2_distance = residuals[:,0].T @ np.linalg.inv(cov_x) @residuals[:,0] +\
+                        residuals[:,1].T @ np.linalg.inv(cov_z) @residuals[:,1] +\
+                        np.sum([(residuals[:,2]/t_err)**2])
+        return chi2_distance        
+
+    def get_theta0(self, sin_theta, p=500):
+        L_Al =  0.4
+        L_Sc = 1.0 # [cm] Scintillator
+        L_r_Al = 24.0111/2.7; # [cm] Radiation length Aluminum/ density of Aluminum
+        L_r_Sc = 43; # [cm] Radiation length Scintillator (Saint-Gobain paper)
+
+        L_rad = L_Al / L_r_Al + L_Sc / L_r_Sc; # [rad lengths] orthogonal to Layer
+        L_rad /= sin_theta; # [rad lengths] in direction of track
+
+        sigma_ms = 13.6 * np.sqrt(L_rad) * (1 + 0.038 * np.log(L_rad)); #
+        sigma_ms /= p # [MeV] Divided by 1000 MeV
+
+        return sigma_ms
+
+    def get_cov(self, Ax, Az):
+
+        sin_theta = np.power(Ax**2+Az**2+1, -1/2)
+        theta_0 = self.get_theta0(sin_theta)  
+        hits = self.hits
+
+        cov_xz = np.zeros((len(self.hits), len(self.hits)))
+        for i in range(1,len(self.hits)):
+            for j in range(1,len(self.hits)):
+                cov_xz[i,j] = np.sum([(hits[i].y-hits[k].y)*(hits[j].y-hits[k].y)*theta_0**2 for k in range(0, min(i,j))])   
+
+        cov_x = cov_xz* Ax**2
+        cov_z = cov_xz* Az**2
+
+        cov_x+=np.diag([hit.x_err**2 for hit in hits])
+        cov_z+=np.diag([hit.z_err**2 for hit in hits])
+
+        return np.array(cov_x), np.array(cov_z)
+
+
+  
+
 class vertex:
     @staticmethod
     def score_seed(seed_par):
@@ -541,7 +686,13 @@ class vertex:
         # - Seed track uncertainty
         # - Number of compatible tracks
         # score = 10*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.1*y0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
-        score = 3*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.1*y0 + 0.1*z0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
-        score = 3*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.2*seed_track_unc
+
+        # float score_layers = -100.0* (tracks.first->chi_s.size()+tracks.second->chi_s.size());
+		# return closest_dist + score_layers + chi2*10.0 - compatible_tracks*20.0;
+
+        # score = 3*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.1*y0 + 0.1*z0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
+        # score = 3*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.2*seed_track_unc
+
+        score = dist_seed + midpoint_chi2*10 - N_compatible_tracks*20
 
         return score
