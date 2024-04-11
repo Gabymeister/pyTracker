@@ -379,8 +379,8 @@ class track:
         if multiple_scattering:
             Q = track.update_Q(dy, Ax, Az, At)
             Q_partial = Q[:3, :3]
-            covariance+=Q_partial
-            # covariance+=np.diag(np.diag(Q_partial))
+            # covariance+=Q_partial
+            covariance+=np.diag(np.diag(Q_partial))
 
 
 
