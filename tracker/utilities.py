@@ -201,21 +201,21 @@ class track:
     #     return Q
 
     @staticmethod
-    def update_Q(dy, Ax, Az, Ay):
+    def update_Q(dy, Ax, Az, At):
 
         # precalculate some numbers
         Ax2 = Ax**2
         Az2 = Az**2
-        Ay2 = Ay**2
+        At2 = At**2
         dy2 = dy**2
         P4P5 = (1+Ax2+Az2)
         # Force the speed to be speed of light
         mag=29.97
         p=500 # [MeV] Momentum 
 
-        Q_block1 = np.array([[(1+Ax2)*P4P5,  Ax*Az*P4P5 , (Ax-1)*P4P5*Ay],
-                             [ Ax*Az*P4P5,  (1+Az2)*P4P5, (Az-1)*P4P5*Ay],
-                             [ (Ax-1)*P4P5*Ay, (Az-1)*P4P5*Ay, (Ax2+Az2)*Ay2]])
+        Q_block1 = np.array([[(1+Ax2)*P4P5,  Ax*Az*P4P5 , (Ax-1)*P4P5*At],
+                             [ Ax*Az*P4P5,  (1+Az2)*P4P5, (Az-1)*P4P5*At],
+                             [ (Ax-1)*P4P5*At, (Az-1)*P4P5*At, (Ax2+Az2)*At2]])
 
 
         Q = np.block([[Q_block1*dy2, Q_block1*dy],
@@ -314,7 +314,7 @@ class track:
 
 
     @staticmethod
-    def chi2_point_track(point, track, point_unc=None):
+    def chi2_point_track(point, track_this, point_unc=None, multiple_scattering=True, speed_constraint=False):
         """ 
         Calculate the chi-squre distance between 
         a 4-D point [x,y,z,t] and a track parameterized by [x0, y0, z0, t0, Ax, Az, At]
@@ -345,19 +345,26 @@ class track:
         ```
         """
         x,y,z,t = point
-        dy =  y - track.y0
+        dy =  y - track_this.y0
+
+        Ax=track_this.Ax
+        Az=track_this.Az
+        At=track_this.At
+        if speed_constraint:
+            At = np.sqrt(Ax**2+Az**2+1)/(sp.constants.c*1e-7)
 
         # Residual
-        track_x = track.x0 + track.Ax*dy
-        track_z = track.z0 + track.Az*dy
-        track_t = track.t0 + track.At*dy  
+        track_x = track_this.x0 + Ax*dy
+        track_z = track_this.z0 + Az*dy
+        track_t = track_this.t0 + At*dy  
         residual = np.array([track_x-x, track_z-z, track_t-t])
 
         # Covariance
-        jac=np.array([[ 	1,  0,	0,  dy,   0,    0],
-                        [ 	0,  1,  0,   0,  dy,    0],
-                        [	0,  0, 	1,   0,   0,    dy]])
-        covariance = jac @ track.cov @ jac.T
+        jac=np.array([[ 	1,  0,	0,  dy,   0,   0],
+                      [ 	0,  1,  0,   0,  dy,   0],
+                      [	    0,  0, 	1,   0,   0,  dy]])
+        covariance = jac @ track_this.cov @ jac.T
+
 
         # Add the uncertainty of the point
         if point_unc is not None:
@@ -367,9 +374,98 @@ class track:
             elif np.array(point_unc).ndim==2:
                 covariance += point_unc
 
+
+        # Add the uncertainty from multiple scattering in the last layer
+        if multiple_scattering:
+            Q = track.update_Q(dy, Ax, Az, At)
+            Q_partial = Q[:3, :3]
+            covariance+=Q_partial
+            # covariance+=np.diag(np.diag(Q_partial))
+
+
+
+
+        # Finally, calculate Chi-square with total covariance
+        chi2 = residual.T @ np.linalg.inv(covariance) @ residual
+        # print(residual)
+        # print(Q_partial)
+        # print(chi2)
+        # print("--")        
+
+        return chi2   
+
+
+    @staticmethod
+    def chi2_point_track_time(point, track_this, point_unc=None, multiple_scattering=True):
+        """ 
+        Calculate the chi-squre distance between 
+        a 4-D point [x,y,z,t] and a track parameterized by [x0, y0, z0, t0, Ax, Az, At]
+        where Ax = dx/dy, Az = dz/dy, At = dt/dy
+
+        Use time as the parameter
+
+        INPUT:
+        ---
+        point: list
+            [x,y,z,t]
+        track: namedtuple
+            namedtuple("Track", ["x0", "y0", "z0", "t0", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
+        point_unc: 1d-list or 2d-list or None
+            [x_err,y_err,z_err,t_err]
+        
+        RETURN:
+        ---
+        chi2: float
+            chi-square distance between the point and the track
+
+        TEST:
+        ```
+        track1 = datatypes.Track(0,0,0, 0, 1,1,0,1, np.diag(np.ones(6)), 0,0,0,0)
+        track2 = datatypes.Track(0,0,1, 0, -1,1,0,1, np.diag(np.ones(6)), 0,0,0,0)
+        midpoint,dist = Util.track.closest_approach_midpoint_Track(track1, track2)
+        chi2_point_track(midpoint, track2)
+
+        0.25
+        ```
+        """
+        x,y,z,t = point
+        dt =  t - track_this.t0
+
+        # Residual
+        track_x = track_this.x0 + track_this.Ax/track_this.At*dt
+        track_y = track_this.y0 + 1/track_this.At*dt
+        track_z = track_this.z0 + track_this.Az/track_this.At*dt
+        residual = np.array([track_x-x, track_y-y, track_z-z])
+
+        # Covariance
+        Ax=track_this.Ax
+        Az=track_this.Az
+        At=track_this.At
+        jac=np.array([[ 	1,  0,	-Ax/At,dt/At,    0, -Ax*dt/At**2],
+                      [ 	0,  0,   -1/At,    0,    0,  -1*dt/At**2],
+                      [	    0,  1, 	-Az/At,    0,dt/At, -Az*dt/At**2]])
+        covariance = jac @ track_this.cov @ jac.T
+
+        # Add the uncertainty of the point
+        if point_unc is not None:
+            if np.array(point_unc).ndim==1:
+                x_err,y_err,z_err,t_err = point_unc
+                covariance += np.diag(np.array([x_err, z_err, t_err])**2)
+            elif np.array(point_unc).ndim==2:
+                covariance += point_unc
+
+
+        # # Add the uncertainty from multiple scattering in the last layer
+        # if multiple_scattering:
+        #     Q = track.update_Q(dy, track_this.Ax, track_this.Az, track_this.At)
+        #     Q_partial = Q[:3, :3]
+        #     covariance+=Q_partial
+
+
+        # Finally, calculate Chi-square with total covariance
         chi2 = residual.T @ np.linalg.inv(covariance) @ residual
 
-        return chi2    
+        return chi2             
 
 
     @staticmethod
@@ -542,10 +638,10 @@ class track:
             Vt_inv = np.diag([1/hit.t_err for hit in hits ])
         elif scattering is True:
             if iters==0:
-                Param_all, Error_all = fit_track_ana(hits, scattering = False)
+                Param_all, Error_all = self.fit_track_ana(hits, scattering = False)
             else:
                 iters-=1
-                Param_all, Error_all = fit_track_ana(hits, scattering = True, iters = iters)
+                Param_all, Error_all = self.fit_track_ana(hits, scattering = True, iters = iters)
 
             # chi2_object = chi2_track_scattering(hits)
             Vx, Vz = chi2_track_scattering(hits).get_cov(Param_all[3], Param_all[4])

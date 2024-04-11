@@ -24,7 +24,9 @@ class chi2_vertex:
         error=0
         point = [x0, y0, z0, t0]
         for track in self.tracks:
-            error += Util.track.chi2_point_track(point, track)
+            error += Util.track.chi2_point_track(point, track, multiple_scattering=True, speed_constraint=True)
+            # error += Util.track.chi2_point_track(point, track, multiple_scattering=False)
+            # error += Util.track.chi2_point_track_time(point, track)
         return error        
 
 class VertexFitter:
@@ -100,7 +102,7 @@ class VertexFitter:
             if len(tracks_found)<2:
                 continue
             if vertex_chi2/vertex_ndof>self.parameters["cut_vertex_VertexChi2Reduced"]:
-                print(f"Vertex vetoed. Chi2 too large. Chi2/ndof:{vertex_chi2}/{vertex_ndof}")
+                if self.debug: print(f"Vertex vetoed. Chi2 too large. Chi2/ndof:{vertex_chi2}/{vertex_ndof}")
                 continue
                 
 
@@ -118,7 +120,7 @@ class VertexFitter:
             if self.debug: 
                 print(f"Vertex found! track indices: {tracks_found_inds}")
                 print(f"  Tracks to vertex chi2:", tracks_chi2)
-                print(f"  Vertex Chi2: {vertex_chi2}; N tracks: {len(vertex_tracks)}; x0,y0,z0,t0: {vertex_location}; Uncertainty: {np.sqrt(np.diag(vertex_cov))}")
+                print(f"  Vertex Chi2/DOF: {vertex_chi2:.1f}/{vertex_ndof}; N tracks: {len(vertex_tracks)}; x0,y0,z0,t0: {vertex_location}; Uncertainty: {np.sqrt(np.diag(vertex_cov))}")
 
 
             # Finally, remove used tracks
@@ -152,7 +154,7 @@ class VertexFitter:
             chi2 = Util.track.chi2_point_track(vertex_location, track, point_unc=vertex_err)
             self.tracks_remaining_info.append(self.trackinfo(ind, chi2_track, chi2, dist))
         # Sort
-        self.tracks_remaining_info.sort(key=lambda m: m.track_vertex_dist) # sort by distance
+        self.tracks_remaining_info.sort(key=lambda m: m.track_vertex_chi2) # sort by distance
 
 
         # Add hits until no longer passes cut
@@ -194,6 +196,7 @@ class VertexFitter:
                 dist = Util.track.distance_to_point(track,vertex_location)
                 chi2 = Util.track.chi2_point_track(vertex_location, track, point_unc=vertex_err)
                 self.tracks_remaining_info[j] = self.trackinfo(ind, chi2_track, chi2, dist)
+            # self.tracks_remaining_info.sort(key=lambda m: m.track_vertex_chi2) # sort by distance
 
         tracks_found_inds = [track.ind for track in tracks_found]
 
