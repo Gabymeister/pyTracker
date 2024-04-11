@@ -218,7 +218,15 @@ class KalmanFilter():
             return -1
         
         # Kalman Gain A
-        A = self.Cf[i].dot(self.F[i].T).dot(inv(self.Cp[i+1]))
+        # A = self.Cf[i].dot(self.F[i].T).dot(inv(self.Cp[i+1]))
+        try:
+            A = self.Cf[i].dot(self.F[i].T).dot(inv(self.Cp[i+1]))
+        except Exception as e:
+            # print(self.Cp, i)
+            # print(inv(np.diag(np.diag(self.Cp[i+1]))))
+            A = self.Cf[i].dot(self.F[i].T).dot(inv(np.diag(np.diag(self.Cp[i+1]))))
+            
+            print("  Error during smoothing:", e)        
         
         # State
         Xsm = self.Xf[i] + A.dot(self.Xsm[0] - self.Xp[i+1])
