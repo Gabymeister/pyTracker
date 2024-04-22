@@ -27,7 +27,7 @@ class hit:
 
         hits=[]
         for i, layer in enumerate(Y_LAYERS):
-            if i%2==1:
+            if layer%2==1:
                 hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_trans, UNC_Y, unc_long, UNC_T, layer, i))
             else:
                 hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_long, UNC_Y, unc_trans, UNC_T, layer, i))         
@@ -638,10 +638,10 @@ class track:
             Vt_inv = np.diag([1/hit.t_err for hit in hits ])
         elif scattering is True:
             if iters==0:
-                Param_all, Error_all = self.fit_track_ana(hits, scattering = False)
+                Param_all, Error_all = track.fit_track_ana(hits, scattering = False)
             else:
                 iters-=1
-                Param_all, Error_all = self.fit_track_ana(hits, scattering = True, iters = iters)
+                Param_all, Error_all = track.fit_track_ana(hits, scattering = True, iters = iters)
 
             # chi2_object = chi2_track_scattering(hits)
             Vx, Vz = chi2_track_scattering(hits).get_cov(Param_all[3], Param_all[4])

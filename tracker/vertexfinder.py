@@ -24,7 +24,7 @@ class chi2_vertex:
         error=0
         point = [x0, y0, z0, t0]
         for track in self.tracks:
-            error += Util.track.chi2_point_track(point, track, multiple_scattering=True, speed_constraint=True)
+            error += Util.track.chi2_point_track(point, track, multiple_scattering=True, speed_constraint=False)
             # error += Util.track.chi2_point_track(point, track, multiple_scattering=False)
             # error += Util.track.chi2_point_track_time(point, track)
         return error        
@@ -239,20 +239,20 @@ class VertexFitter:
                     continue
  
                 # Cut on seed chi2 (estimated)
-                # midpoint_chi2 = Util.track.chi2_point_track(midpoint, tracks[i])+ Util.track.chi2_point_track(midpoint, tracks[j])
-                # midpoint_err_sum = np.sqrt(np.sum(np.diag(Util.track.cov_point_track(midpoint, tracks[i]))+ np.diag(Util.track.cov_point_track(midpoint, tracks[j]))))
-                # if midpoint_chi2>self.parameters["cut_vertex_SeedChi2"]:
-                #     continue
+                midpoint_chi2 = Util.track.chi2_point_track(midpoint, tracks[i])+ Util.track.chi2_point_track(midpoint, tracks[j])
+                midpoint_err_sum = np.sqrt(np.sum(np.diag(Util.track.cov_point_track(midpoint, tracks[i]))+ np.diag(Util.track.cov_point_track(midpoint, tracks[j]))))
+                if midpoint_chi2>self.parameters["cut_vertex_SeedChi2"]:
+                    continue
 
-                # Cut on seed chi2 (fit)
-                # Fit the seed
-                m = self.fit([tracks[i], tracks[j]], midpoint, hesse=False)
-                if (not m.valid) or (m.fval>self.parameters["cut_vertex_SeedChi2"]):
-                    if self.debug: print(f"  * Seed failed, chi2 too large. Seed fit result valid: {m.valid}, seed chi2 {m.fval}")
-                    continue 
-                midpoint = list(m.values)
-                midpoint_chi2 = m.fval
-                midpoint_err_sum = 0
+                # # Cut on seed chi2 (fit)
+                # # Fit the seed
+                # m = self.fit([tracks[i], tracks[j]], midpoint, hesse=False)
+                # if (not m.valid) or (m.fval>self.parameters["cut_vertex_SeedChi2"]):
+                #     if self.debug: print(f"  * Seed failed, chi2 too large. Seed fit result valid: {m.valid}, seed chi2 {m.fval}")
+                #     continue 
+                # midpoint = list(m.values)
+                # midpoint_chi2 = m.fval
+                # midpoint_err_sum = 0
 
                 seed_track_unc = np.sum(np.diag(tracks[i].cov)) + np.sum(np.diag(tracks[j].cov))
                 seed_track_chi2 =tracks[i].chi2+tracks[j].chi2

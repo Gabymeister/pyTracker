@@ -25,8 +25,9 @@ class TrackFinder:
             "cut_track_TrackChi2Reduced": 7,
             "cut_track_TrackSpeed": [15,60], # [cm/ns], (speed_low, speed_high). 30 is speed of light
             "cut_track_TrackNHitsMin": 3,
+            "cut_track_MultipleScatteringFind": False,
             "fit_track_MultipleScattering": False,
-            "fit_track_Method": "backward", # choose one of {"backward", "forward", "forward-seed"}
+            "fit_track_Method": "backward", # choose one of {"backward", "forward", "forward-seed", "least-square", "least-square-ana"}
             "fit_track_LeastSquareIters":2, # No need to change
         }
 
@@ -60,12 +61,7 @@ class TrackFinder:
                 if len(hits_found)<track_TrackNHitsMin or len(hits_found)==2:
                     if self.debug: print(f"   finding failed, not enough hits. Hits found: {len(hits_found)}")
                     continue            
-                ndof = 3*len(hits_found) - 6
-                track_chi2_reduced = track_chi2/ndof                   
-                # If chi2 is too large, drop this track
-                if track_chi2_reduced>self.parameters["cut_track_TrackChi2Reduced"]:
-                    if self.debug: print(f"   finding failed, chi2 too large. Chi2/nodf: {track_chi2}/{ndof}")
-                    continue
+
 
 
                 # Sort the hits by time before running the filter
@@ -80,7 +76,14 @@ class TrackFinder:
                 # If not enough hits, drop this track
                 if len(hits_found)<track_TrackNHitsMin:
                     if self.debug: print(f"  fitting failed, not enough hits. Hits found: {len(hits_found)}")
-                    continue               
+                    continue    
+                    
+                # If chi2 is too large, drop this track
+                ndof = 3*len(hits_found) - 6
+                track_chi2_reduced = track_chi2/ndof                   
+                if track_chi2_reduced>self.parameters["cut_track_TrackChi2Reduced"]:
+                    if self.debug: print(f"   finding failed, chi2 too large. Chi2/nodf: {track_chi2}/{ndof}")
+                    continue                    
 
 
                 # # ------------------------------------
@@ -202,15 +205,15 @@ class TrackFinder:
                 dy = hits[i].y- hits[j].y
                 dz = hits[i].z- hits[j].z
                 dt = hits[i].t- hits[j].t
-                ds = np.abs((dx**2+dy**2-dz**2)/c**2-dt**2)
+                ds = np.abs((dx**2+dy**2+dz**2)/c**2-dt**2)
                 ds = ds/dt**2
                 if ds>self.parameters["cut_track_SeedSpeed"]:
                     continue
-                seeds.append([i,j,ds])
+                seeds.append([i,j,ds,-abs(dy)])
 
         # Sort seeds by score
         # Reversed: place the best one at the end
-        seeds.sort(key=lambda s: s[-1], reverse=True)
+        seeds.sort(key=lambda s: (s[3], s[2]), reverse=True)
         return seeds
 
     def find_once(self, hits, hits_layer_grouped, seed):  
@@ -253,10 +256,12 @@ class TrackFinder:
 
             kf_find = KF.KalmanFilterFind()
             kf_find.init_filter(*Util.track.init_state(seed_hits))
+            
+            if self.debug: print(" Finding backward in layers", FIND_BACKWARD_LAYERS)
             if self.method=="recursive":
                 hits_found_backward, chi2 = self.find_in_layers_recursive(hits, hits_layer_grouped, FIND_BACKWARD_LAYERS, kf_find, step_pre)
             else:
-                hits_found_backward, chi2 = self.find_in_layers_greedy(hits, hits_layer_grouped, FIND_BACKWARD_LAYERS, kf_find, step_pre, cut=False)
+                hits_found_backward, chi2 = self.find_in_layers_greedy(hits, hits_layer_grouped, FIND_BACKWARD_LAYERS, kf_find, step_pre)
             # Order of found hits also needs to be reversed for backward finding
             hits_found_backward = hits_found_backward[::-1] 
             hits_found_backward.extend(hits_found)   
@@ -264,8 +269,10 @@ class TrackFinder:
         if FIND_FORWARD:
             if len(hits_found)<2:
                 return [], []
-            # Rest the seed to be the first two hits
-            seed_hits = hits_found[:2]            
+            # Rest the seed to be the first and the last hit
+            seed_hits = [hits_found[0], hits_found[-1]]#hits_found[:2]            
+            # seed_hits = hits_found[:2]    
+            
             step_pre = seed_hits[1].y # Keep track of the y of the previous step
             if max(LAYERS)==seed_hits[1].layer:
                 return hits_found, chi2
@@ -277,17 +284,17 @@ class TrackFinder:
 
             kf_find = KF.KalmanFilterFind()
             kf_find.init_filter(*Util.track.init_state(seed_hits)) # Set initial state using two hits specified by the seed
+            if self.debug: print(" Finding forward in layers", FIND_FORWARD_LAYERS )
             if self.method=="recursive":
                 hits_found_forward,chi2 = self.find_in_layers_recursive(hits, hits_layer_grouped, FIND_FORWARD_LAYERS, kf_find, step_pre)
             else:
                 hits_found_forward,chi2 = self.find_in_layers_greedy(hits, hits_layer_grouped, FIND_FORWARD_LAYERS, kf_find, step_pre)
             chi2_found+=chi2
-            hits_found = hits_found[:2] + hits_found_forward
+            hits_found = hits_found[:] + hits_found_forward
    
-
         return hits_found,chi2_found
 
-    def find_in_layers_greedy(self, hits, hits_layer_grouped, layers_to_scan, kf_find, step_pre, cut=True):
+    def find_in_layers_greedy(self, hits, hits_layer_grouped, layers_to_scan, kf_find, step_pre, cut_chi2=True):
         """
         Find the hit that has minimum chi2 in each layer
         """
@@ -305,7 +312,7 @@ class TrackFinder:
             dy = step_this - step_pre # Step size
 
             Ax, Az, At = kf_find.Xf[3:]
-            velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering            
+            velocity = [Ax, Az, At]     if self.parameters["cut_track_MultipleScatteringFind"] else None       # Velocity is needed for multiple scattering            
             _, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_thislayer[0], dy, velocity=velocity) # Calculate matrices. Only need to do once for all this in the same layer
             kf_find.update_matrix(Vi, Hi, Fi, Qi) # pass matrices to KF
 
@@ -339,14 +346,14 @@ class TrackFinder:
 
             # Find the hit with minimum chi2
             chi2_min_idx = np.argmin(chi2_predict)
-            if chi2_predict[chi2_min_idx]<self.parameters["cut_track_HitAddChi2"] or cut==False:
+            if chi2_predict[chi2_min_idx]<self.parameters["cut_track_HitAddChi2"] or not cut_chi2:
                 # Save the hit either if the chi2 is lower than the threshold, or the cut is disabled
                 hits_found.append(hits_thislayer[chi2_predict_inds[chi2_min_idx]])
                 # Update the step and the Kalman filter
                 step_pre = step_this
                 mi = hits_found[-1]
                 kf_find.forward_filter(np.array([mi.x, mi.z, mi.t]))
-                if self.debug: print("  Hit found:", mi, "; chi2", chi2_predict[chi2_min_idx])
+                if self.debug: print("  Hit found:", mi, "; chi2", chi2_predict[chi2_min_idx],chi2_predict[chi2_min_idx]<self.parameters["cut_track_HitAddChi2"], cut_chi2)
             else:
                 if self.debug: print(f"  No hits added from layer {layer}. Chi2 of hits {chi2_predict}. Hits", np.array(hits_thislayer)[chi2_predict_inds])
 
@@ -393,7 +400,7 @@ class TrackFinder:
         dy = step_this - step_pre # Step size
         step_pre = step_this
         Ax, Az, At = kf_find.Xf[3:]
-        velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None   # Velocity is needed for multiple scattering        
+        velocity = [Ax, Az, At]     if self.parameters["cut_track_MultipleScatteringFind"] else None   # Velocity is needed for multiple scattering        
         _, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_thislayer[0], dy, velocity=velocity) # Calculate matrices. Only need to do once for all this in the same layer
         kf_find.update_matrix(Vi, Hi, Fi, Qi) # pass matrices to KF
 
