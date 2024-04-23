@@ -140,68 +140,9 @@ class track:
         Qi = track.update_Q(dy, *velocity) if velocity is not None else 0
         return mi, Vi, Hi, Fi, Qi
 
-    # @staticmethod
-    # def update_Q(dy, velocity):
-    #     mag=np.linalg.norm(velocity)
-    #     a,b,c = np.array(velocity)/mag
-
-    #     # precalculate some numbers
-    #     b2 = b**2
-    #     a2 = a**2
-    #     c2 = c**2
-    #     dy2 = dy*dy
-    #     b4 = np.power(b, 4)
-    #     mag2 = np.power(mag , 2)
-
-    #     # Force the speed to be speed of light
-    #     mag=29.97
-    #     mag2=mag**2
-    #     p=500 # [MeV] Momentum 
-
-    #     Q_block1 = np.array([[(b2 +a2) / b4,   a * c / b4 , a / (mag  * b4)],
-    #                         [   a * c / b4, (c2 + b2) / b4, c / (mag  * b4)],
-    #                         [  a /(mag*b4), c / (mag * b4), (1 - b2) / (mag2 * b4)]])
-
-    #     Q_block2 = copy.copy(Q_block1)                          
-    #     Q_block2[0,2]*=mag
-    #     Q_block2[1,2]*=mag
-    #     Q_block2[2,2]*=mag
-
-    #     Q_block3 = copy.copy(Q_block1)                          
-    #     Q_block3[2,0]*=mag
-    #     Q_block3[2,1]*=mag
-    #     Q_block3[2,2]*=mag 
-
-    #     Q_block4 = copy.copy(Q_block1)                          
-    #     Q_block4[0,2]*=mag
-    #     Q_block4[1,2]*=mag
-    #     Q_block4[2,0]*=mag
-    #     Q_block4[2,1]*=mag
-    #     Q_block4[2,2]*=mag2         
-
-
-
-    #     Q = np.block([[Q_block1*dy2, Q_block2*dy],
-    #                   [Q_block3*dy , Q_block4]])
-
-    #     sin_theta = np.abs(b)
-    #     L_Al =  0.4
-    #     L_Sc = 1.0 # [cm] Scintillator
-    #     L_r_Al = 24.0111/2.7; # [cm] Radiation length Aluminum/ density of Aluminum
-    #     L_r_Sc = 43; # [cm] Radiation length Scintillator (Saint-Gobain paper)
-
-    #     L_rad = L_Al / L_r_Al + L_Sc / L_r_Sc; # [rad lengths] orthogonal to Layer
-    #     L_rad /= sin_theta; # [rad lengths] in direction of track
-
-    #     sigma_ms = 13.6 * np.sqrt(L_rad) * (1 + 0.038 * np.log(L_rad)); #
-    #     sigma_ms /= p # [MeV] Divided by 1000 MeV
-
-    #     Q = Q*sigma_ms**2
-        
-    #     return Q
 
     @staticmethod
-    def update_Q(dy, Ax, Az, At):
+    def update_Q(dy, Ax, Az, At, sigma_ms2=None):
 
         # precalculate some numbers
         Ax2 = Ax**2
@@ -209,19 +150,50 @@ class track:
         At2 = At**2
         dy2 = dy**2
         P4P5 = (1+Ax2+Az2)
-        # Force the speed to be speed of light
-        mag=29.97
-        p=500 # [MeV] Momentum 
+        sin_theta = np.power(Ax**2+Az**2+1, -1/2)
 
-        Q_block1 = np.array([[(1+Ax2)*P4P5,  Ax*Az*P4P5 , (Ax-1)*P4P5*At],
-                             [ Ax*Az*P4P5,  (1+Az2)*P4P5, (Az-1)*P4P5*At],
-                             [ (Ax-1)*P4P5*At, (Az-1)*P4P5*At, (Ax2+Az2)*At2]])
-
-
+        Q_block1 = np.array([[(1+Ax2)*P4P5,      Ax*Az*P4P5 , (Ax-1)*P4P5*At],
+                             [  Ax*Az*P4P5,    (1+Az2)*P4P5,  (Az-1)*P4P5*At],
+                             [ (Ax-1)*P4P5*At,  (Az-1)*P4P5*At, (Ax2+Az2)*At2]])
         Q = np.block([[Q_block1*dy2, Q_block1*dy],
                       [Q_block1*dy , Q_block1]])
 
+        if sigma_ms2 is None:
+            sigma_ms2 = track.scattering_angle_teststand(sin_theta, momentum_MeV=500)**2
+        
+
+        Q = Q*sigma_ms2
+        return Q
+
+
+    @staticmethod
+    def update_Q_partial(dy, Ax, Az, At, sigma_ms2=None):
+
+        # precalculate some numbers
+        Ax2 = Ax**2
+        Az2 = Az**2
+        At2 = At**2
+        dy2 = dy**2
+        P4P5 = (1+Ax2+Az2)
         sin_theta = np.power(Ax**2+Az**2+1, -1/2)
+
+        Q_diag = np.array([(1+Ax2)*P4P5,(1+Az2)*P4P5, (Ax2+Az2)*At2])*dy2
+
+        if sigma_ms2 is None:
+            sigma_ms2 = track.scattering_angle_teststand(sin_theta, momentum_MeV=500)**2
+
+        Q_diag = Q_diag*sigma_ms2
+        return Q_diag        
+    
+    
+    @staticmethod
+    def scattering_angle(l_rad_cm, momentum_MeV):
+        sigma_ms = 13.6 * np.sqrt(l_rad_cm) * (1 + 0.038 * np.log(l_rad_cm)) / momentum_MeV; #
+        return sigma_ms
+
+
+    @staticmethod
+    def scattering_angle_teststand(sin_theta, momentum_MeV=500):
         L_Al =  0.4
         L_Sc = 1.0 # [cm] Scintillator
         L_r_Al = 24.0111/2.7; # [cm] Radiation length Aluminum/ density of Aluminum
@@ -229,13 +201,12 @@ class track:
 
         L_rad = L_Al / L_r_Al + L_Sc / L_r_Sc; # [rad lengths] orthogonal to Layer
         L_rad /= sin_theta; # [rad lengths] in direction of track
-
-        sigma_ms = 13.6 * np.sqrt(L_rad) * (1 + 0.038 * np.log(L_rad)); #
-        sigma_ms /= p # [MeV] Divided by 1000 MeV
-
-        Q = Q*sigma_ms**2
         
-        return Q
+        sigma_ms = 13.6 * np.sqrt(L_rad) * (1 + 0.038 * np.log(L_rad)) / momentum_MeV; #
+        return sigma_ms        
+
+
+    
 
 
 
@@ -360,10 +331,11 @@ class track:
         residual = np.array([track_x-x, track_z-z, track_t-t])
 
         # Covariance
-        jac=np.array([[ 	1,  0,	0,  dy,   0,   0],
-                      [ 	0,  1,  0,   0,  dy,   0],
-                      [	    0,  0, 	1,   0,   0,  dy]])
-        covariance = jac @ track_this.cov @ jac.T
+        # jac=np.array([[ 	1,  0,	0,  dy,   0,   0],
+        #               [ 	0,  1,  0,   0,  dy,   0],
+        #               [	    0,  0, 	1,   0,   0,  dy]])
+        # covariance = jac @ track_this.cov @ jac.T
+        covariance = track_this.cov[:3,:3] + 2*dy*track_this.cov[3:,:3] + dy*dy * track_this.cov[3:,3:] # equivalent to above, faster
 
 
         # Add the uncertainty of the point
@@ -377,20 +349,15 @@ class track:
 
         # Add the uncertainty from multiple scattering in the last layer
         if multiple_scattering:
-            Q = track.update_Q(dy, Ax, Az, At)
-            Q_partial = Q[:3, :3]
-            # covariance+=Q_partial
-            covariance+=np.diag(np.diag(Q_partial))
-
-
+            Q_partial = track.update_Q_partial(dy, Ax, Az, At)
+            covariance[0][0]+=Q_partial[0]
+            covariance[1][1]+=Q_partial[1]
+            covariance[2][2]+=Q_partial[2]
 
 
         # Finally, calculate Chi-square with total covariance
         chi2 = residual.T @ np.linalg.inv(covariance) @ residual
-        # print(residual)
-        # print(Q_partial)
-        # print(chi2)
-        # print("--")        
+ 
 
         return chi2   
 
@@ -455,11 +422,11 @@ class track:
                 covariance += point_unc
 
 
-        # # Add the uncertainty from multiple scattering in the last layer
-        # if multiple_scattering:
-        #     Q = track.update_Q(dy, track_this.Ax, track_this.Az, track_this.At)
-        #     Q_partial = Q[:3, :3]
-        #     covariance+=Q_partial
+        # Add the uncertainty from multiple scattering in the last layer
+        if multiple_scattering:
+            Q = track.update_Q(dy, track_this.Ax, track_this.Az, track_this.At)
+            Q_partial = Q[:3, :3]
+            covariance+=Q_partial
 
 
         # Finally, calculate Chi-square with total covariance

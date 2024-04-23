@@ -25,7 +25,6 @@ class chi2_vertex:
         point = [x0, y0, z0, t0]
         for track in self.tracks:
             error += Util.track.chi2_point_track(point, track, multiple_scattering=True, speed_constraint=False)
-            # error += Util.track.chi2_point_track(point, track, multiple_scattering=False)
             # error += Util.track.chi2_point_track_time(point, track)
         return error        
 
@@ -59,7 +58,7 @@ class VertexFitter:
         self.vertices = []
         while len(self.seeds)>0:
             # ------------------------------------
-            # Round 1: Find tracks  that belongs to this vertex
+            # Round 1: Find tracks that belongs to this vertex
             seed = self.seeds[-1]
             tracks_found, vertex_fit = self.find_once(self.tracks, seed)
             self.seeds.pop(-1)
@@ -87,17 +86,9 @@ class VertexFitter:
                 if len(tracks_found)<2:
                     if self.debug: print("Not enough tracks for this seed")
                     break 
-                # Fit again
-                vertex_fit = self.fit(tracks_found, vertex_location, hesse=False)
-                vertex_location =  np.array(vertex_fit.values) 
-                vertex_cov =  np.array(vertex_fit.covariance) 
-                vertex_chi2 = vertex_fit.fval 
-                vertex_ndof = 3*len(vertex_tracks)-4
-                vertex_tracks = tracks_found   
-                vertex_cov_xzt = copy.copy(vertex_cov)
-                vertex_cov_xzt = np.delete(vertex_cov_xzt, 1,0)
-                vertex_cov_xzt = np.delete(vertex_cov_xzt, 1,1)
-                tracks_chi2 = [Util.track.chi2_point_track(vertex_location, track, vertex_cov_xzt) for track in tracks_found]                              
+                # Update the fit and recalculate the track chi2
+                vertex_fit = self.fit(tracks_found, vertex_location, hesse=False, strategy=0, tolerance = 1)
+                tracks_chi2 = [Util.track.chi2_point_track(vertex_location, track, np.sqrt(np.diag(vertex_cov))) for track in tracks_found]                              
 
             if len(tracks_found)<2:
                 continue
@@ -105,16 +96,18 @@ class VertexFitter:
                 if self.debug: print(f"Vertex vetoed. Chi2 too large. Chi2/ndof:{vertex_chi2}/{vertex_ndof}")
                 continue
                 
-
-            # tracks_found, vertex_found = self.fit_once(seed)
-
+                
             # ------------------------------------
-            # Round 3: Final fit
-            # m = self.fit(tracks_found, vertex_location)
+            # Round 3: Final fit, use smaller tolerance (0.1) and more accurate strategy (1)
+            vertex_fit = self.fit(tracks_found, vertex_location, hesse=False, strategy=1, tolerance = 0.1)
+            vertex_location =  np.array(vertex_fit.values) 
+            vertex_cov =  np.array(vertex_fit.covariance) 
+            vertex_chi2 = vertex_fit.fval 
+            vertex_ndof = 3*len(vertex_tracks)-4
+            vertex_tracks = tracks_found   
 
 
             # # Vertex = namedtuple("Vertex", ["x0", "y0", "z0", "t0", "cov", "chi2", "tracks"])
-
             self.vertices.append(datatypes.Vertex(*vertex_location, vertex_cov, vertex_chi2, vertex_tracks))
             tracks_found_inds = [t.ind for t in vertex_tracks]
             if self.debug: 
@@ -135,7 +128,7 @@ class VertexFitter:
         seed_midpoint = np.array([seed.x0, seed.y0, seed.z0, seed.t0])
         tracks_found = [tracks[seed_inds[0]], tracks[seed_inds[1]]]
         # Fit the seed
-        m = self.fit(tracks_found, seed_midpoint, hesse=False)
+        m = self.fit(tracks_found, seed_midpoint, hesse=False, strategy=0, tolerance = 1) # Use strategy of 0 and large tolerance to do fast fit
         if (not m.valid) or (m.fval>self.parameters["cut_vertex_SeedChi2"]):
             if self.debug: print(f"  * Seed failed. Seed fit result valid: {m.valid}, seed chi2 {m.fval}")
             return [], []        
@@ -171,7 +164,7 @@ class VertexFitter:
                 continue
 
             tracks_found.append(tracks[info.track_ind])
-            m = self.fit(tracks_found, vertex_location, hesse=False)
+            m = self.fit(tracks_found, vertex_location, hesse=False, strategy=0, tolerance = 1)
             ndof = 3*len(tracks_found)-4
             if (not m.valid) or (m.fval/ndof>self.parameters["cut_vertex_VertexChi2ReducedAdd"])\
                 or ((m.fval-vertex_chi2)>self.parameters["cut_vertex_TrackAddChi2"]):
@@ -288,17 +281,29 @@ class VertexFitter:
         return seeds
 
 
-    def fit(self, tracks, guess, hesse=False):
+    def fit(self, tracks, guess, hesse=False, strategy=1, tolerance = 0.1):
+        
+        """
+        strategy: int
+            choose one of {0,1,2}, 0 is the fastest. Default is 1
+        tolerance: float
+            convergence is detected when edm < edm_max, where edm_max is calculated as
+             edm_max = 0.002 * tolerance * errordef
+            default tolerance is 0.1, set to larger value to speed up convergence
+
+        """
         x0_init, y0_init, z0_init,t0_init = guess
 
         m = iminuit.Minuit(chi2_vertex(tracks),x0=x0_init, y0=y0_init, z0=z0_init, t0=t0_init)
-        m.limits["x0"]=(-100000,100000)
-        m.limits["y0"]=(-100000,100000)
-        m.limits["z0"]=(-100000,100000)
-        m.limits["t0"]=(-500,1e5)
-        m.errors["x0"]=0.1
-        m.errors["y0"]=0.1
-        m.errors["z0"]=0.1
+        m.strategy = strategy
+        m.tol = tolerance
+        m.limits["x0"]=(-10000,10000)
+        m.limits["y0"]=(-10000,10000)
+        m.limits["z0"]=(-10000,10000)
+        m.limits["t0"]=(-100,  10000)
+        m.errors["x0"]=1
+        m.errors["y0"]=1
+        m.errors["z0"]=1
         m.errors["t0"]=0.1
 
         m.migrad()  # run optimiser

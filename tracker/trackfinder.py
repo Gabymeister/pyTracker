@@ -141,7 +141,7 @@ class TrackFinder:
                 self.remove_related_hits_seeds(hits_found)
                 self.hits_found_all.extend(hits_found)                
 
-            # Remove the hits that are already added to track
+            # Remove hits that are already added to track
             hit_found_inds = [hit.ind for hit in self.hits_found_all]
             hit_found_inds.sort(reverse=True)
             for ind in hit_found_inds:
@@ -229,23 +229,15 @@ class TrackFinder:
         seed_start_layer = seed_hits[0].layer
         seed_stop_layer  = seed_hits[1].layer        
         # Check if needed to find backward or forward
-        FIND_FORWARD = True
-        FIND_BACKWARD= True
         if (seed_hits[0].y > seed_hits[1].y):
             TRACK_DIRECTION = 0 # Downward track
-            # FIND_FORWARD = seed_start_layer>=LAYERS[0]
-            # FIND_FORWARD_LAYERS = LAYERS[:np.argmax(LAYERS>seed_stop_layer)-1][::-1]
-            # FIND_BACKWARD = seed_stop_layer<LAYERS[-1]
             FIND_BACKWARD_LAYERS = LAYERS[np.argmax(LAYERS>seed_stop_layer):]     
         else:
             TRACK_DIRECTION = 1 # Upward track
-            # FIND_FORWARD = seed_stop_layer<LAYERS[-1]
-            # FIND_FORWARD_LAYERS  = LAYERS[np.argmax(LAYERS>seed_stop_layer):]
-            # FIND_BACKWARD = seed_start_layer>=LAYERS[0]
             FIND_BACKWARD_LAYERS = LAYERS[:np.argmax(LAYERS>seed_stop_layer)-1][::-1]
 
-        # print(FIND_FORWARD, FIND_FORWARD_LAYERS, FIND_BACKWARD, FIND_BACKWARD_LAYERS)
-        
+        FIND_FORWARD = True # Always find forward
+        FIND_BACKWARD= True if len(FIND_BACKWARD_LAYERS)>1 else False  # Find backwards only when there are more than one layer before the second hit in of the seed
 
 
         ##### Find ####
@@ -265,7 +257,10 @@ class TrackFinder:
             # Order of found hits also needs to be reversed for backward finding
             hits_found_backward = hits_found_backward[::-1] 
             hits_found_backward.extend(hits_found)   
-            hits_found = hits_found_backward           
+            hits_found = hits_found_backward
+        else:
+            hits_found = seed_hits     
+               
         if FIND_FORWARD:
             if len(hits_found)<2:
                 return [], []
