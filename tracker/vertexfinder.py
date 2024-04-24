@@ -19,7 +19,7 @@ import datatypes
 class chi2_vertex:
     def __init__(self, tracks):
         self.tracks=tracks
-        self.func_code = iminuit.util.make_func_code(['x0', 'y0', 'z0', 't0'])
+        self._parameters={'x0':None, 'y0':None, 'z0':None, 't0':None}
     def __call__(self, x0, y0, z0, t0):
         error=0
         point = [x0, y0, z0, t0]
@@ -35,12 +35,11 @@ class VertexFitter:
         self.trackinfo =  namedtuple("trackinfo",["track_ind", "track_chi2", "track_vertex_chi2", "track_vertex_dist"])
         self.parameters={
             "cut_vertex_SeedDist": 300,          # [cm]
-            "cut_vertex_SeedChi2": 200,          
+            "cut_vertex_SeedChi2": 100,          
             "cut_vertex_TrackChi2Reduced": -1,        # NOT USED
-            "cut_vertex_TrackAddDist": 400,   
+            "cut_vertex_TrackAddDist": 300,   
             "cut_vertex_TrackAddChi2": 30, 
-            "cut_vertex_VertexChi2ReducedAdd":10,
-            "cut_vertex_TrackDropChi2": 10,   
+            "cut_vertex_TrackDropChi2": 15,   
             "cut_vertex_VertexChi2Reduced": 5,   
         }
 
@@ -104,12 +103,12 @@ class VertexFitter:
             vertex_cov =  np.array(vertex_fit.covariance) 
             vertex_chi2 = vertex_fit.fval 
             vertex_ndof = 3*len(vertex_tracks)-4
-            vertex_tracks = tracks_found   
+            vertex_tracks = tracks_found
+            tracks_found_inds = [t.ind for t in vertex_tracks]
 
 
             # # Vertex = namedtuple("Vertex", ["x0", "y0", "z0", "t0", "cov", "chi2", "tracks"])
-            self.vertices.append(datatypes.Vertex(*vertex_location, vertex_cov, vertex_chi2, vertex_tracks))
-            tracks_found_inds = [t.ind for t in vertex_tracks]
+            self.vertices.append(datatypes.Vertex(*vertex_location, vertex_cov, vertex_chi2, tracks_found_inds))
             if self.debug: 
                 print(f"Vertex found! track indices: {tracks_found_inds}")
                 print(f"  Tracks to vertex chi2:", tracks_chi2)
@@ -166,8 +165,9 @@ class VertexFitter:
             tracks_found.append(tracks[info.track_ind])
             m = self.fit(tracks_found, vertex_location, hesse=False, strategy=0, tolerance = 1)
             ndof = 3*len(tracks_found)-4
-            if (not m.valid) or (m.fval/ndof>self.parameters["cut_vertex_VertexChi2ReducedAdd"])\
+            if (not m.valid) \
                 or ((m.fval-vertex_chi2)>self.parameters["cut_vertex_TrackAddChi2"]):
+                # or (m.fval/ndof>self.parameters["cut_vertex_VertexChi2Reduced"])\
                 if self.debug: print(f"  * Track [{info.track_ind}] removed from vertex fit. Fit valid: {m.valid}; vertex chi2_r {m.fval/ndof:.2f}; vertex chi2 increment {m.fval-vertex_chi2 :.2f}")                                   
                 tracks_found.pop(-1)
                 ndof = 3*len(tracks_found)-4

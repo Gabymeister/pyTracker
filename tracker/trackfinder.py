@@ -22,7 +22,8 @@ class TrackFinder:
             "cut_track_HitAddChi2": 15,          # Only used when method is "greedy"
             "cut_track_HitDropChi2": 15,         # Set to -1 to turn off
             "cut_track_HitProjectionSigma": 10,   # Number of sigmas
-            "cut_track_TrackChi2Reduced": 7,
+            "cut_track_TrackChi2Reduced": 3,    # Only use this for track with 3 hits
+            "cut_track_TrackChi2Prob": 0.9,
             "cut_track_TrackSpeed": [15,60], # [cm/ns], (speed_low, speed_high). 30 is speed of light
             "cut_track_TrackNHitsMin": 3,
             "cut_track_MultipleScatteringFind": False,
@@ -52,14 +53,14 @@ class TrackFinder:
                 # ------------------------------------
                 # Round 1: Find hits that belongs to one track
                 seed = self.seeds[-1]; 
-                if self.debug: print(f"--- New seed --- \n  seed: {seed}")
+                if self.debug: print(f"--- New seed --- \n [Seed]: {seed}")
                 hits_found, track_chi2 = self.find_once(self.hits, self.hits_grouped, seed)
                 # Remove the current seed no matter the track is good or not:
                 self.seeds.pop(-1)                
                 # Apply cuts
                 # If not enough hits, drop this track
                 if len(hits_found)<track_TrackNHitsMin or len(hits_found)==2:
-                    if self.debug: print(f"   finding failed, not enough hits. Hits found: {len(hits_found)}")
+                    if self.debug: print(f"   finding failed (adding), not enough hits. Hits found: {len(hits_found)}")
                     continue            
 
 
@@ -75,14 +76,7 @@ class TrackFinder:
                     hits_found.pop(ind)
                 # If not enough hits, drop this track
                 if len(hits_found)<track_TrackNHitsMin:
-                    if self.debug: print(f"  fitting failed, not enough hits. Hits found: {len(hits_found)}")
-                    continue    
-                    
-                # If chi2 is too large, drop this track
-                ndof = 3*len(hits_found) - 6
-                track_chi2_reduced = track_chi2/ndof                   
-                if track_chi2_reduced>self.parameters["cut_track_TrackChi2Reduced"]:
-                    if self.debug: print(f"   finding failed, chi2 too large. Chi2/nodf: {track_chi2}/{ndof}")
+                    if self.debug: print(f"   finding failed (dropping), not enough hits. Hits found: {len(hits_found)}")
                     continue                    
 
 
@@ -122,15 +116,26 @@ class TrackFinder:
                     # Finally, prepare the output
                     track_output = self.prepare_output_ls(popt, pcov, chi2, hits_found, track_ind = len(self.tracks))                                                                                   
 
+                # Cut on chi2 probablity
+                ndof = 3*len(hits_found) - 6
+                track_chi2 = track_output.chi2
+                track_chi2_prob = sp.stats.chi2.cdf(track_chi2, ndof)         
+                track_chi2_reduced = track_chi2/ndof        
+                if (track_chi2_prob>self.parameters["cut_track_TrackChi2Prob"] and ndof>3) or \
+                   (track_chi2_reduced>self.parameters["cut_track_TrackChi2Reduced"] and ndof<=3):
+                    if self.debug: 
+                        print(f" Track vetoed, chi2 too large. Chi2/nodf: {track_chi2}/{ndof}, prob = {track_chi2_prob}")
+                    continue    
 
                 # Cut on speed
                 state = track_output # Track is a namedtuple("Track", ["x0", "y0", "z0", "t", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
                 speed = np.linalg.norm([state.Ax/state.At, state.Az/state.At, 1/state.At])  
                 if not (self.parameters["cut_track_TrackSpeed"][0]<speed<self.parameters["cut_track_TrackSpeed"][1]):
-                    if self.debug: print(f"  Track vetoed. Speed of the track: {speed}[cm/ns]")
+                    if self.debug: print(f" Track vetoed. Speed of the track: {speed}[cm/ns]")
                     continue    
                 elif self.debug: 
-                    print(f" Track found. Added hits:") 
+                    print(f" [Track found]", track_output) 
+                    print(" Added hits:")
                     for t in hits_found:
                         print("  ", t)                                      
 
@@ -265,8 +270,8 @@ class TrackFinder:
             if len(hits_found)<2:
                 return [], []
             # Rest the seed to be the first and the last hit
-            seed_hits = [hits_found[0], hits_found[-1]]#hits_found[:2]            
-            # seed_hits = hits_found[:2]    
+            # seed_hits = [hits_found[0], hits_found[-1]]#hits_found[:2]            
+            seed_hits = hits_found[:2]    
             
             step_pre = seed_hits[1].y # Keep track of the y of the previous step
             if max(LAYERS)==seed_hits[1].layer:
@@ -285,7 +290,7 @@ class TrackFinder:
             else:
                 hits_found_forward,chi2 = self.find_in_layers_greedy(hits, hits_layer_grouped, FIND_FORWARD_LAYERS, kf_find, step_pre)
             chi2_found+=chi2
-            hits_found = hits_found[:] + hits_found_forward
+            hits_found = hits_found[:2] + hits_found_forward
    
         return hits_found,chi2_found
 
@@ -336,7 +341,7 @@ class TrackFinder:
                     chi2_predict.append(chi2)
                     chi2_predict_inds.append(imeasurement)
             if len(chi2_predict)==0:
-                return [],0
+                continue
 
 
             # Find the hit with minimum chi2
@@ -349,6 +354,7 @@ class TrackFinder:
                 mi = hits_found[-1]
                 kf_find.forward_filter(np.array([mi.x, mi.z, mi.t]))
                 if self.debug: print("  Hit found:", mi, "; chi2", chi2_predict[chi2_min_idx],chi2_predict[chi2_min_idx]<self.parameters["cut_track_HitAddChi2"], cut_chi2)
+
             else:
                 if self.debug: print(f"  No hits added from layer {layer}. Chi2 of hits {chi2_predict}. Hits", np.array(hits_thislayer)[chi2_predict_inds])
 
@@ -622,8 +628,7 @@ class TrackFinder:
         hits_filtered.insert(0, [x0,y0,z0,t0])
 
         # Add the covariance of one additional layer:
-        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[-1], -1.5, velocity=velocity)
-        cov = kalman_result.Cf[-1] #+ Qi
+        cov = kalman_result.Cf[-1]
         chi2 = kalman_result.chift_total
         ind = track_ind
         hits = [hit.ind for hit in hits_found[::-1]]        
