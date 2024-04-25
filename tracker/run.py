@@ -14,7 +14,9 @@ import datatypes
 
 def main():
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(     
+                prog='pyTracker',
+                description='Reconstructing track and vertex without magnetic field.',)
     parser.add_argument('input_filename',    type=str, help='Path: input filename')
     parser.add_argument('output_directory',  type=str, help='Path: output directory')
     parser.add_argument('--output_suffix',   type=str, default="", help='Path: (optional) suffix to the output filename')
@@ -22,12 +24,16 @@ def main():
     parser.add_argument('--config', default="",  type=str, help='Path: configuration file. Default configuration (config_defaut.py) will be used if no config file is provided.')
     parser.add_argument('--printn', default=1000,  type=int, help='Print every [printn] event')
     parser.add_argument('--debug',  action='store_true', help='Show debug info')
+    parser.add_argument('--overwrite',  action='store_true', help='Overwrite the existing output file')
     args = parser.parse_args()
 
     # Initiate file IO
     current_dir = os.path.dirname(os.path.realpath(__file__))
     io_full_path = current_dir+ f"/io_user/{args.io}.py" if not os.path.exists(args.io) else args.io
     io_user = importlib.machinery.SourceFileLoader("*", io_full_path).load_module()
+    if io_user.exists(output_filename) and not args.overwrite:
+        print("Outfile exists. Processing terminated. Use --overwrite option to force running the tracker, or assign a different suffix by --output_suffix=.")
+        return
 
 
     # Parse the configuration
@@ -50,7 +56,7 @@ def main():
 
     #-------------------------------------------------------------
     # Load the file
-    data = io_user.load(args.input_filename)
+    data, metadata = io_user.load(args.input_filename)
     
     # Make variables to hold the result
     results = {
@@ -75,17 +81,31 @@ def main():
         if (entry+1)%config.parameters["print_n"]==0:  
             time_stop=time.time()
             print("    event is ", entry+1, ", time", time_stop-time_start, "seconds")
+
         results["hits"].append([])
         results["tracks"].append([])
         results["vertices"].append([])
         event_tracks=0
         event_vertices=0
+        
         for group in groups:
             hits = data[group][entry]
             results["hits"][-1].extend(hits)
             if group!="inactive":
+                # Rotate hits so that y is always the layer direction
+                if metadata["groups"][group]["flip_index"] is not None:
+                    hits_new = [Util.general.flip_hit(hit, metadata["groups"][group]["flip_index"]) for hit in hits]
+
+                # Run track and vertex reconstruction
                 tracks = tf.run(hits)
                 vertices = vf.run(tracks) 
+
+                # Rotate tracks and vertices back
+                if metadata["groups"][group]["flip_index"] is not None:
+                    tracks   = [Util.general.flip_track(track, metadata["groups"][group]["flip_index"]) for track in tracks]                
+                    vertices = [Util.general.flip_vertex(vertex, metadata["groups"][group]["flip_index"]) for vertex in vertices]                
+
+                # Save result
                 results["tracks"][-1].extend(tracks)
                 results["vertices"][-1].extend(vertices)
                 tracks_found+=len(tracks)

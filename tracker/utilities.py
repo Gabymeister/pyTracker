@@ -111,7 +111,7 @@ class track:
 
 
     @staticmethod
-    def add_measurement(hit, dy, velocity = None):
+    def add_measurement(hit, dy, velocity = None, multiple_scattering_p = 500, multiple_scattering_length = 0.06823501107481977):
         """
         Calculate matrix when adding a new hit
         INPUT:
@@ -137,12 +137,12 @@ class track:
                     [0, 0, 0, 1, 0, 0],
                     [0, 0, 0, 0, 1, 0],
                     [0, 0, 0, 0, 0, 1]])
-        Qi = track.update_Q(dy, *velocity) if velocity is not None else 0
+        Qi = track.update_Q(dy, *velocity, multiple_scattering_p, multiple_scattering_length) if velocity is not None else 0
         return mi, Vi, Hi, Fi, Qi
 
 
     @staticmethod
-    def update_Q(dy, Ax, Az, At, sigma_ms2=None):
+    def update_Q(dy, Ax, Az, At, multiple_scattering_p=500, multiple_scattering_length=0.06823501107481977):
 
         # precalculate some numbers
         Ax2 = Ax**2
@@ -158,16 +158,14 @@ class track:
         Q = np.block([[Q_block1*dy2, Q_block1*dy],
                       [Q_block1*dy , Q_block1]])
 
-        if sigma_ms2 is None:
-            sigma_ms2 = track.scattering_angle_teststand(sin_theta, momentum_MeV=500)**2
+        sigma_ms2 = track.scattering_angle(multiple_scattering_length/sin_theta, momentum_MeV=multiple_scattering_p)**2
         
-
         Q = Q*sigma_ms2
         return Q
 
 
     @staticmethod
-    def update_Q_partial(dy, Ax, Az, At, sigma_ms2=None):
+    def update_Q_partial(dy, Ax, Az, At, multiple_scattering_p=500, multiple_scattering_length=0.06823501107481977):
 
         # precalculate some numbers
         Ax2 = Ax**2
@@ -179,8 +177,7 @@ class track:
 
         Q_diag = np.array([(1+Ax2)*P4P5,(1+Az2)*P4P5, (Ax2+Az2)*At2])*dy2
 
-        if sigma_ms2 is None:
-            sigma_ms2 = track.scattering_angle_teststand(sin_theta, momentum_MeV=500)**2
+        sigma_ms2 = track.scattering_angle(multiple_scattering_length/sin_theta, momentum_MeV=multiple_scattering_p)**2
 
         Q_diag = Q_diag*sigma_ms2
         return Q_diag        
@@ -189,24 +186,7 @@ class track:
     @staticmethod
     def scattering_angle(l_rad_cm, momentum_MeV):
         sigma_ms = 13.6 * np.sqrt(l_rad_cm) * (1 + 0.038 * np.log(l_rad_cm)) / momentum_MeV; #
-        return sigma_ms
-
-
-    @staticmethod
-    def scattering_angle_teststand(sin_theta, momentum_MeV=500):
-        L_Al =  0.4
-        L_Sc = 1.0 # [cm] Scintillator
-        L_r_Al = 24.0111/2.7; # [cm] Radiation length Aluminum/ density of Aluminum
-        L_r_Sc = 43; # [cm] Radiation length Scintillator (Saint-Gobain paper)
-
-        L_rad = L_Al / L_r_Al + L_Sc / L_r_Sc; # [rad lengths] orthogonal to Layer
-        L_rad /= sin_theta; # [rad lengths] in direction of track
-        
-        sigma_ms = 13.6 * np.sqrt(L_rad) * (1 + 0.038 * np.log(L_rad)) / momentum_MeV; #
-        return sigma_ms        
-
-
-    
+        return sigma_ms 
 
 
 
@@ -246,7 +226,43 @@ class track:
         # Filter backward
         kf.backward_smooth()
 
-        return kf    
+        return kf  
+
+    @staticmethod
+    def run_kf_fast(hits, initial_state=None, initial_cov=None, multiple_scattering = False):
+        kf = KF.KalmanFilterFind()
+
+        # Set initial state using first two hits
+        m0, V0, H0, Xf0, Cf0, Rf0 = track.init_state(hits) # Use the first two hits to initiate
+        if initial_state is not None:
+            Xf0 = initial_state
+        if initial_cov is not None:
+            Cf0 = initial_cov        
+        kf.init_filter( m0, V0, H0, Xf0, Cf0, Rf0)
+        
+
+        # Feed all measurements to KF
+        start_ind = 2 if initial_state is None else 1
+        for i in range(start_ind,len(hits)):   
+            # get updated matrix
+            hit = hits[i]
+            dy  = hits[i].y-hits[i-1].y
+
+            # If you don't need multiple scattering:
+            if not multiple_scattering: 
+                mi, Vi, Hi, Fi, Qi = track.add_measurement(hit, dy)
+            # Or, use this 
+            else:
+                Ax, Az, At = kf.Xf[-1][3:]
+                velocity = [Ax, Az, At] #[Ax/At, 1/At, Az/At]
+                mi, Vi, Hi, Fi, Qi = track.add_measurement(hit, dy, velocity=velocity)
+            
+            # pass to KF
+            kf.update_matrix(Vi, Hi, Fi, Qi)
+            kf.forward_filter(np.array([mi.x, mi.z, mi.t]))
+
+
+        return kf              
 
 
     @staticmethod
@@ -285,7 +301,8 @@ class track:
 
 
     @staticmethod
-    def chi2_point_track(point, track_this, point_unc=None, multiple_scattering=True, speed_constraint=False):
+    def chi2_point_track(point, track_this, point_unc=None, multiple_scattering=True, speed_constraint=False,\
+            multiple_scattering_p=500, multiple_scattering_length=0.06823501107481977):
         """ 
         Calculate the chi-squre distance between 
         a 4-D point [x,y,z,t] and a track parameterized by [x0, y0, z0, t0, Ax, Az, At]
@@ -349,7 +366,7 @@ class track:
 
         # Add the uncertainty from multiple scattering in the last layer
         if multiple_scattering:
-            Q_partial = track.update_Q_partial(dy, Ax, Az, At)
+            Q_partial = track.update_Q_partial(dy, Ax, Az, At, multiple_scattering_p, multiple_scattering_length)
             covariance[0][0]+=Q_partial[0]
             covariance[1][1]+=Q_partial[1]
             covariance[2][2]+=Q_partial[2]
@@ -363,7 +380,8 @@ class track:
 
 
     @staticmethod
-    def chi2_point_track_time(point, track_this, point_unc=None, multiple_scattering=True):
+    def chi2_point_track_time(point, track_this, point_unc=None, multiple_scattering=True,\
+            multiple_scattering_p=500, multiple_scattering_length=0.06823501107481977):
         """ 
         Calculate the chi-squre distance between 
         a 4-D point [x,y,z,t] and a track parameterized by [x0, y0, z0, t0, Ax, Az, At]
@@ -423,10 +441,11 @@ class track:
 
 
         # Add the uncertainty from multiple scattering in the last layer
-        if multiple_scattering:
-            Q = track.update_Q(dy, track_this.Ax, track_this.Az, track_this.At)
-            Q_partial = Q[:3, :3]
-            covariance+=Q_partial
+        # if multiple_scattering:
+        #     Q_partial = track.update_Q_partial(dy, Ax, Az, At, multiple_scattering_p, multiple_scattering_length)
+        #     covariance[0][0]+=Q_partial[0]
+        #     covariance[1][1]+=Q_partial[1]
+        #     covariance[2][2]+=Q_partial[2]
 
 
         # Finally, calculate Chi-square with total covariance
@@ -605,10 +624,10 @@ class track:
             Vt_inv = np.diag([1/hit.t_err for hit in hits ])
         elif scattering is True:
             if iters==0:
-                Param_all, Error_all = track.fit_track_ana(hits, scattering = False)
+                Param_all, Error_all, chi2_all = track.fit_track_ana(hits, scattering = False)
             else:
                 iters-=1
-                Param_all, Error_all = track.fit_track_ana(hits, scattering = True, iters = iters)
+                Param_all, Error_all, chi2_all = track.fit_track_ana(hits, scattering = True, iters = iters)
 
             # chi2_object = chi2_track_scattering(hits)
             Vx, Vz = chi2_track_scattering(hits).get_cov(Param_all[3], Param_all[4])
@@ -739,7 +758,7 @@ class vertex:
 
         Lower score means better seed quality and should be used first.
         """
-        x0,y0,z0,t0, midpoint_chi2, midpoint_err_sum, dist_seed, N_compatible_tracks, N_compatible_track_distance, seed_track_unc, seed_track_chi2 = seed_par
+        x0,y0,z0,t0, midpoint_chi2, dist_seed, N_compatible_tracks, N_compatible_track_distance, seed_track_unc, seed_track_chi2 = seed_par
 
         # Score based on the following items:
         # - Seed chi2
@@ -748,14 +767,98 @@ class vertex:
         # - Seed starting point (Higher priority to ones closer to the IP)
         # - Seed track uncertainty
         # - Number of compatible tracks
-        # score = 10*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.1*y0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
+        # score = 10*midpoint_chi2  + dist_seed + 0.1*y0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
 
         # float score_layers = -100.0* (tracks.first->chi_s.size()+tracks.second->chi_s.size());
 		# return closest_dist + score_layers + chi2*10.0 - compatible_tracks*20.0;
 
-        # score = 3*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.1*y0 + 0.1*z0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
-        # score = 3*midpoint_chi2 + 0.5*midpoint_err_sum + dist_seed + 0.2*seed_track_unc
+        # score = 3*midpoint_chi2  + dist_seed + 0.1*y0 + 0.1*z0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
+        # score = 3*midpoint_chi2  + dist_seed + 0.2*seed_track_unc
 
         score = dist_seed + midpoint_chi2*10 - N_compatible_tracks*50
 
         return score
+
+
+class general:
+    @staticmethod
+    def flip_list(l, flip_index=[0,1]):
+        l = copy.copy(l)
+        l[flip_index[0]],l[flip_index[1]] = l[flip_index[1]],l[flip_index[0]]
+        return l
+
+    @staticmethod
+    def flip_matrix(m, flip_index=[0,1]):
+        m=np.array(m)
+        m[flip_index, :] = m[flip_index[::-1], :]
+        m[:, flip_index] = m[:, flip_index[::-1]]
+        return m
+
+
+    @staticmethod
+    def flip_hit(hit_t, flip_index=[0,1]):
+        """
+        Flip the two coordinates of a hit_t
+        INPUT:
+        hit_t: datatypes.Hit
+        flip_index: list, [ind1, ind2], both index should be from {0,1,2}
+        """
+        hit_t = list(hit_t)
+        hit_t[flip_index[0]],hit_t[flip_index[1]] = hit_t[flip_index[1]],hit_t[flip_index[0]]
+        hit_t[flip_index[0]+4],hit_t[flip_index[1]+4] = hit_t[flip_index[1]+4],hit_t[flip_index[0]+4]
+        hit_new = datatypes.Hit(*hit_t)
+        return hit_new
+
+    @staticmethod
+    def flip_track(track_t, flip_index=[0,1]):
+        """
+        Flip the two coordinates of a track
+        INPUT:
+        track_t: datatypes.Track
+        flip_index: list, [ind1, ind2], both index should be from {0,1,2}        
+        """
+        # Track = namedtuple("Track", ["x0", "y0", "z0", "t0", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
+
+        cov = track_t.cov
+        chi2 = track_t.chi2
+        ind = track_t.ind
+        hits = track_t.hits
+        hits_filtered = track_t.hits_filtered
+        track_t = list(track_t)
+
+        # xyzt and error
+        track_t[flip_index[0]],track_t[flip_index[1]] = track_t[flip_index[1]],track_t[flip_index[0]]
+        track_t[flip_index[0]+4],track_t[flip_index[1]+4] = track_t[flip_index[1]+4],track_t[flip_index[0]+4]
+        # covariance matrix
+        cov_new = general.flip_matrix(cov, flip_index=flip_index)
+        # filtered hits
+        hits_filtered_new = [general.flip_list(hit_i, flip_index=flip_index) for hit_i in hits_filtered]
+
+
+
+        hit_new = datatypes.Track(*track_t[:8], cov_new, chi2, ind, hits, hits_filtered_new)
+        return hit_new     
+
+
+    @staticmethod
+    def flip_vertex(vertex_t, flip_index=[0,1]):
+        """
+        Flip the two coordinates of a track
+        INPUT:
+        track_t: datatypes.Track
+        flip_index: list, [ind1, ind2], both index should be from {0,1,2}        
+        """
+        # Vertex = namedtuple("Vertex", ["x0", "y0", "z0", "t0", "cov", "chi2", "tracks"])
+
+        cov = vertex_t.cov
+        chi2 = vertex_t.chi2
+        tracks = vertex_t.tracks
+        vertex_t = list(vertex_t)
+
+        # xyzt
+        vertex_t[flip_index[0]],vertex_t[flip_index[1]] = vertex_t[flip_index[1]],vertex_t[flip_index[0]]
+        # covariance matrix
+        cov_new = general.flip_matrix(cov, flip_index=flip_index)
+
+        vertex_new = datatypes.Vertex(*vertex_t[:4], cov_new, chi2, tracks)
+        return hit_new                   

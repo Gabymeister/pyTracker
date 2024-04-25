@@ -25,7 +25,7 @@ class chi2_vertex:
         point = [x0, y0, z0, t0]
         for track in self.tracks:
             error += Util.track.chi2_point_track(point, track, multiple_scattering=True, speed_constraint=False)
-            # error += Util.track.chi2_point_track_time(point, track)
+            # error += Util.track.chi2_point_track_time(point, track, multiple_scattering=False)
         return error        
 
 class VertexFitter:
@@ -34,13 +34,15 @@ class VertexFitter:
         self.method = method # {"ls", "kalman"}
         self.trackinfo =  namedtuple("trackinfo",["track_ind", "track_chi2", "track_vertex_chi2", "track_vertex_dist"])
         self.parameters={
-            "cut_vertex_SeedDist": 300,          # [cm]
-            "cut_vertex_SeedChi2": 100,          
-            "cut_vertex_TrackChi2Reduced": -1,        # NOT USED
-            "cut_vertex_TrackAddDist": 300,   
-            "cut_vertex_TrackAddChi2": 30, 
-            "cut_vertex_TrackDropChi2": 15,   
-            "cut_vertex_VertexChi2Reduced": 5,   
+            "cut_vertex_SeedDist": 300,                 # [cm], close approach distance between two tracks of the seed
+            "cut_vertex_SeedChi2": 50,                  # chi-square cut of the seed
+            "cut_vertex_TrackChi2Reduced": -1,          # NOT USED
+            "cut_vertex_TrackAddDist": 300,             # Distance cut to add a track
+            "cut_vertex_TrackAddChi2": 30,              # chi2 cut to add a track
+            "cut_vertex_TrackDropChi2": 15,             # chi2 cut to drop a track
+            "cut_vertex_VertexChi2Reduced": 5,          # Vertex chi2-square cut
+            "multiple_scattering_p": 500, # [MeV/c] momentum of multiple scattering, 
+            "multiple_scattering_length": 0.06823501107481977 # [1] material thickness in the unit of scattering length             
         }
 
     def run(self, tracks):
@@ -233,19 +235,22 @@ class VertexFitter:
  
                 # Cut on seed chi2 (estimated)
                 midpoint_chi2 = Util.track.chi2_point_track(midpoint, tracks[i])+ Util.track.chi2_point_track(midpoint, tracks[j])
-                midpoint_err_sum = np.sqrt(np.sum(np.diag(Util.track.cov_point_track(midpoint, tracks[i]))+ np.diag(Util.track.cov_point_track(midpoint, tracks[j]))))
+                # midpoint_err_sum = np.sqrt(np.sum(np.diag(Util.track.cov_point_track(midpoint, tracks[i]))+ np.diag(Util.track.cov_point_track(midpoint, tracks[j]))))
+
+
+                # Cut on seed chi2 (fit)
+                # Fit the seed
+                m = self.fit([tracks[i], tracks[j]], midpoint, hesse=False, strategy=0, tolerance = 1)
+                if (not m.valid) or (m.fval>self.parameters["cut_vertex_SeedChi2"]):
+                    if self.debug: print(f"  * Seed failed, chi2 too large. Seed fit result valid: {m.valid}, seed chi2 {m.fval}")
+                    continue 
+                midpoint = list(m.values)
+                midpoint_chi2 = m.fval
+                midpoint_err_sum = sum(m.errors)
                 if midpoint_chi2>self.parameters["cut_vertex_SeedChi2"]:
                     continue
 
-                # # Cut on seed chi2 (fit)
-                # # Fit the seed
-                # m = self.fit([tracks[i], tracks[j]], midpoint, hesse=False)
-                # if (not m.valid) or (m.fval>self.parameters["cut_vertex_SeedChi2"]):
-                #     if self.debug: print(f"  * Seed failed, chi2 too large. Seed fit result valid: {m.valid}, seed chi2 {m.fval}")
-                #     continue 
-                # midpoint = list(m.values)
-                # midpoint_chi2 = m.fval
-                # midpoint_err_sum = 0
+                print(i, j , midpoint_err_sum)
 
                 seed_track_unc = np.sum(np.diag(tracks[i].cov)) + np.sum(np.diag(tracks[j].cov))
                 seed_track_chi2 =tracks[i].chi2+tracks[j].chi2
@@ -259,8 +264,7 @@ class VertexFitter:
                     if k in [i,j]:
                         continue
                     dist = Util.track.distance_to_point(tracks[k],midpoint)
-                    if dist<self.parameters["cut_vertex_TrackAddDist"]: #and \
-                        # Util.track.chi2_point_track(midpoint,tracks[k])<self.parameters["cut_vertex_TrackAddChi2"]*1.5:
+                    if dist<self.parameters["cut_vertex_TrackAddDist"]: 
 
                         N_compatible_tracks = N_compatible_tracks + 1
                         N_compatible_hits += len(tracks[k].hits)
@@ -268,7 +272,7 @@ class VertexFitter:
                 N_compatible_track_distance = N_compatible_track_distance/N_compatible_tracks if N_compatible_tracks>0 else N_compatible_track_distance
 
                 ## VertexSeed = namedtuple("VertexSeed",["x0", "y0", "z0", "t0", "cov", "chi2", "dist", "Ntracks", "trackind1","trackind2","score"])
-                seed_score = Util.vertex.score_seed([*midpoint, midpoint_chi2, midpoint_err_sum, dist_seed, N_compatible_tracks, N_compatible_track_distance, seed_track_unc, seed_track_chi2])
+                seed_score = Util.vertex.score_seed([*midpoint, midpoint_chi2, dist_seed, N_compatible_tracks, N_compatible_track_distance, seed_track_unc, seed_track_chi2])
                 seed_found = datatypes.VertexSeed(*midpoint, 0, midpoint_chi2, dist_seed, N_compatible_tracks, i, j, seed_score)
                 seeds.append(seed_found)
 
@@ -281,7 +285,8 @@ class VertexFitter:
         return seeds
 
 
-    def fit(self, tracks, guess, hesse=False, strategy=1, tolerance = 0.1):
+    def fit(self, tracks, guess, hesse=False, strategy=1, tolerance = 0.1, \
+            limit = {"x0":(-20000,20000), "y0":(-1000,12000), "z0":(-20000,20000), "t0":(-100,1000)}):
         
         """
         strategy: int
@@ -297,10 +302,10 @@ class VertexFitter:
         m = iminuit.Minuit(chi2_vertex(tracks),x0=x0_init, y0=y0_init, z0=z0_init, t0=t0_init)
         m.strategy = strategy
         m.tol = tolerance
-        m.limits["x0"]=(-10000,10000)
-        m.limits["y0"]=(-10000,10000)
-        m.limits["z0"]=(-10000,10000)
-        m.limits["t0"]=(-100,  10000)
+        m.limits["x0"]=limit["x0"]
+        m.limits["y0"]=limit["y0"]
+        m.limits["z0"]=limit["z0"]
+        m.limits["t0"]=limit["t0"]
         m.errors["x0"]=1
         m.errors["y0"]=1
         m.errors["z0"]=1

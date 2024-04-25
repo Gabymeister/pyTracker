@@ -17,13 +17,24 @@
 ##      Return:
 ##      ---
 ##          data: dict
-##          The key of the dictionary is the group of hits.
-##          For example, there could be three groups, "inactive", "1" and "2"
-##          Group "inactive" will not be processed, and can be used to store floor hits
-##          Group "1" and "2" can be used to save hits in top layers and wall tracking layers
+##              The key of the dictionary is the group of hits.
+##              For example, there could be three groups, "inactive", "1" and "2"
+##              Group "inactive" will not be processed, and can be used to store floor hits
+##              Group "1" and "2" can be used to save hits in top layers and wall tracking layers
+##          metadata: dict
+##              This dictionary contains metadata. The necessary metadata is the direction of each group
+##              Because the tracker takes "y" axis as the default layer direction, it is needed to rotate the coordinates
+##              if the layer is actually facing another direction.
+##              So, you should provide the coordinate rotation for each group
+##              For example: metadata["groups"]["1"] = {"flip_index":[1,2]}
 ##      """
 ## 2. dump(data, filename, *args, **kwargs):
 ##      Save the processed data to disk. You can implement whatever file format.
+## 3. exists(filename):
+##       """
+##       This function is here to tell if the file already exists
+##       """
+##     return os.path.exists(filename)
 
 import math, os, sys
 import importlib
@@ -74,14 +85,22 @@ def load(filename, printn=2000, *args, **kwargs):
 
     print("Finished loading file")
 
+    # Make metadata
+    metadata={"groups":{}}
+    metadata["groups"]["1"] = {"flip_index":None}
+    metadata["groups"]["2"] = {"flip_index":[1,2]}
+
     # size = getsize(data)
     # print(f"Memory usage of loaded data {size/1e6:.2f} [MB]")
 
-    return data
+    return data, metadata
 
 
 def dump(data, filename):
     joblib.dump(data,filename+".joblib")
+
+def exists(filename):
+    return os.path.exists(filename+".joblib")
     
     
 

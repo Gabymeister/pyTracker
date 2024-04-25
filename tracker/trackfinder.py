@@ -30,6 +30,8 @@ class TrackFinder:
             "fit_track_MultipleScattering": False,
             "fit_track_Method": "backward", # choose one of {"backward", "forward", "forward-seed", "least-square", "least-square-ana"}
             "fit_track_LeastSquareIters":2, # No need to change
+            "multiple_scattering_p": 500, # [MeV/c] momentum of multiple scattering, 
+            "multiple_scattering_length": 0.06823501107481977 # [1] material thickness in the unit of scattering length
         }
 
     def run(self, hits):
@@ -275,7 +277,7 @@ class TrackFinder:
             
             step_pre = seed_hits[1].y # Keep track of the y of the previous step
             if max(LAYERS)==seed_hits[1].layer:
-                return hits_found, chi2
+                return hits_found, chi2_found
 
             if (seed_hits[0].y > seed_hits[1].y):
                 FIND_FORWARD_LAYERS = LAYERS[:np.argmax(LAYERS>seed_hits[1].layer)-1][::-1]
@@ -289,7 +291,7 @@ class TrackFinder:
                 hits_found_forward,chi2 = self.find_in_layers_recursive(hits, hits_layer_grouped, FIND_FORWARD_LAYERS, kf_find, step_pre)
             else:
                 hits_found_forward,chi2 = self.find_in_layers_greedy(hits, hits_layer_grouped, FIND_FORWARD_LAYERS, kf_find, step_pre)
-            chi2_found+=chi2
+            chi2_found=chi2
             hits_found = hits_found[:2] + hits_found_forward
    
         return hits_found,chi2_found
@@ -313,7 +315,8 @@ class TrackFinder:
 
             Ax, Az, At = kf_find.Xf[3:]
             velocity = [Ax, Az, At]     if self.parameters["cut_track_MultipleScatteringFind"] else None       # Velocity is needed for multiple scattering            
-            _, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_thislayer[0], dy, velocity=velocity) # Calculate matrices. Only need to do once for all this in the same layer
+            _, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_thislayer[0], dy, velocity,
+                                            self.parameters["multiple_scattering_p"],self.parameters["multiple_scattering_length"]) # Calculate matrices. Only need to do once for all this in the same layer
             kf_find.update_matrix(Vi, Hi, Fi, Qi) # pass matrices to KF
 
             # Use the Predicted location to limit the search range
@@ -336,7 +339,6 @@ class TrackFinder:
                 if test_measurement_incompatible(m.x, m.z, m.t):
                     continue
                 else:
-                # if 1:
                     chi2 = kf_find.forward_predict_chi2(np.array([m.x, m.z, m.t]))
                     chi2_predict.append(chi2)
                     chi2_predict_inds.append(imeasurement)
@@ -402,7 +404,8 @@ class TrackFinder:
         step_pre = step_this
         Ax, Az, At = kf_find.Xf[3:]
         velocity = [Ax, Az, At]     if self.parameters["cut_track_MultipleScatteringFind"] else None   # Velocity is needed for multiple scattering        
-        _, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_thislayer[0], dy, velocity=velocity) # Calculate matrices. Only need to do once for all this in the same layer
+        _, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_thislayer[0], dy, velocity,
+                                            self.parameters["multiple_scattering_p"],self.parameters["multiple_scattering_length"]) # Calculate matrices. Only need to do once for all this in the same layer
         kf_find.update_matrix(Vi, Hi, Fi, Qi) # pass matrices to KF
 
         # Predicted location 
@@ -488,7 +491,8 @@ class TrackFinder:
 
             Ax, Az, At = kf.Xf[-1][3:]
             velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None        # Velocity is needed for multiple scattering
-            mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hit, dy, velocity=velocity)
+            mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hit, dy, velocity,
+                                            self.parameters["multiple_scattering_p"],self.parameters["multiple_scattering_length"])
             
             # pass to KF
             kf.forward_predict(mi, Vi, Hi, Fi, Qi)
@@ -524,7 +528,8 @@ class TrackFinder:
         Ax, Az, At = kalman_result.Xsm[0][3:]
         velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering      
 
-        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], hits_found[0].y - hits_found[1].y, velocity=velocity)
+        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], hits_found[0].y - hits_found[1].y, velocity,
+                                            self.parameters["multiple_scattering_p"],self.parameters["multiple_scattering_length"])
         Xp_i = Fi@kalman_result.Xsm[0]
         Cp_i = Fi@kalman_result.Csm[0]@Fi.T + Qi 
 
@@ -540,7 +545,8 @@ class TrackFinder:
 
 
         # Add the covariance of one additional layer:
-        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], -1.5, velocity=velocity)
+        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], -1.5, velocity,
+                                            self.parameters["multiple_scattering_p"],self.parameters["multiple_scattering_length"])
         cov = statecov_predicted_step_0 + Qi
         chi2 = kalman_result.chift_total
         ind = track_ind
@@ -578,7 +584,8 @@ class TrackFinder:
 
 
         # Add the covariance of one additional layer:
-        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], -1.5, velocity=velocity)
+        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], -1.5, velocity,
+                                            self.parameters["multiple_scattering_p"],self.parameters["multiple_scattering_length"])
         cov = statecov_predicted_step_0 + Qi
         chi2 = kalman_result.chift_total
         ind = track_ind
@@ -613,7 +620,8 @@ class TrackFinder:
         Ax, Az, At = kalman_result.Xsm[0][3:]
         velocity = [Ax, Az, At]     if self.parameters["fit_track_MultipleScattering"] else None       # Velocity is needed for multiple scattering      
 
-        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], hits_found[0].y - hits_found[1].y, velocity=velocity)
+        mi, Vi, Hi, Fi, Qi = Util.track.add_measurement(hits_found[0], hits_found[0].y - hits_found[1].y, velocity,
+                                            self.parameters["multiple_scattering_p"],self.parameters["multiple_scattering_length"])
         state_predicted_step_0 = Fi@kalman_result.Xsm[0]
         x0 = state_predicted_step_0[0]
         z0 = state_predicted_step_0[1]
