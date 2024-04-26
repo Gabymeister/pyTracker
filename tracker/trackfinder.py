@@ -18,13 +18,13 @@ class TrackFinder:
         self.method = method # {"recursive", "greedy"}
         self.debug = debug
         self.parameters={
-            "cut_track_SeedSpeed": 1,          # in the unit of c. Limit the maximum speed formed by the seed.
-            "cut_track_HitAddChi2": 15,          # Only used when method is "greedy"
-            "cut_track_HitDropChi2": 15,         # Set to -1 to turn off
-            "cut_track_HitProjectionSigma": 10,   # Number of sigmas
-            "cut_track_TrackChi2Reduced": 3,    # Only use this for track with 3 hits
-            "cut_track_TrackChi2Prob": 0.9,
-            "cut_track_TrackSpeed": [15,60], # [cm/ns], (speed_low, speed_high). 30 is speed of light
+            "cut_track_SeedSpeed": 1,               # in the unit of c. Limit the maximum speed formed by the seed.
+            "cut_track_HitAddChi2": 15,             # Only used when method is "greedy"
+            "cut_track_HitDropChi2": 15,            # Set to -1 to turn off
+            "cut_track_HitProjectionSigma": 10,     # Number of sigmas
+            "cut_track_TrackChi2Reduced": 3,        # Only use this for track with 3 hits
+            "cut_track_TrackChi2Prob": 0.9,         # Chi-square probablity (calculated from chi2_cdf(x, DOF))
+            "cut_track_TrackSpeed": [25,35],        # [cm/ns], [speed_low, speed_high]. 30 is the speed of light
             "cut_track_TrackNHitsMin": 3,
             "cut_track_MultipleScatteringFind": False,
             "fit_track_MultipleScattering": False,
@@ -47,9 +47,10 @@ class TrackFinder:
         if self.parameters["cut_track_TrackNHitsMin"]>self.total_layers:
             return self.tracks
 
+        hit_found_inds = []
         for track_TrackNHitsMin in range(self.parameters["cut_track_TrackNHitsMin"], self.total_layers+1)[::-1]:
             if self.debug: print(f"\n\n================Looking for track with {track_TrackNHitsMin} hits=============")
-            self.seeds = self.seeding(self.hits)
+            self.seeds = self.seeding(self.hits, used_index=hit_found_inds)
             self.hits_found_all = []
             while len(self.seeds)>0:
                 # ------------------------------------
@@ -149,12 +150,22 @@ class TrackFinder:
                 self.hits_found_all.extend(hits_found)                
 
             # Remove hits that are already added to track
-            hit_found_inds = [hit.ind for hit in self.hits_found_all]
+            hit_found_inds.extend([hit.ind for hit in self.hits_found_all])
             hit_found_inds.sort(reverse=True)
-            for ind in hit_found_inds:
-                self.hits.pop(ind)
+            # for ind in hit_found_inds:
+            #     self.hits.pop(ind)
             # Group the remaining hits
-            self.hits_grouped = Util.track.group_hits_by_layer(self.hits)
+            self.hits_grouped = Util.track.group_hits_by_layer(self.hits, used_index = hit_found_inds)
+            if len(self.hits_grouped.keys())<=2:
+                break
+
+
+        if self.debug:
+            print("=====================================")
+            print("=========Track finding finished======")
+            print("Tracks found:")
+            for t in self.tracks:
+                print(t)
 
 
 
@@ -197,7 +208,7 @@ class TrackFinder:
         return self.tracks_found
 
 
-    def seeding(self, hits):
+    def seeding(self, hits, used_index=[]):
         """
         Find seed for tracks
         Returns a pair of index of the hit (not the hit itself!) and a score
@@ -207,6 +218,8 @@ class TrackFinder:
         for i in range(len(hits)):
             for j in range(i+1, len(hits)):
                 if hits[i].y == hits[j].y:
+                    continue
+                if hits[i].ind in used_index   or  hits[j].ind in used_index:
                     continue
                 dx = hits[i].x- hits[j].x
                 dy = hits[i].y- hits[j].y
@@ -271,7 +284,7 @@ class TrackFinder:
         if FIND_FORWARD:
             if len(hits_found)<2:
                 return [], []
-            # Rest the seed to be the first and the last hit
+            # Reset the seed to be the first and the last hit
             # seed_hits = [hits_found[0], hits_found[-1]]#hits_found[:2]            
             seed_hits = hits_found[:2]    
             

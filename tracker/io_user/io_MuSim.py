@@ -1,6 +1,5 @@
 # --------------------------------------------------
 # User IO for tracker
-# The function of this file is to implement the input/output
 # --------------------------------------------------
 ## The following functions needs to be defined:
 ## 1. load(filename, *args, **kwargs):
@@ -28,13 +27,7 @@
 ##              So, you should provide the coordinate rotation for each group
 ##              For example: metadata["groups"]["1"] = {"flip_index":[1,2]}
 ##      """
-## 2. dump(data, filename, *args, **kwargs):
-##      Save the processed data to disk. You can implement whatever file format.
-## 3. exists(filename):
-##       """
-##       This function is here to tell if the file already exists
-##       """
-##     return os.path.exists(filename)
+
 
 import math, os, sys
 import importlib
@@ -42,15 +35,18 @@ import importlib
 import ROOT as root
 import joblib
 
+sys.path.append("..")
+import datatypes
+
 # Test:
 # import importlib
 # io_user = importlib.machinery.SourceFileLoader("*", "io_mu-simulation.py").load_module()
 # io_user.load("/project/rrg-mdiamond/tomren/mudata/LLP_geometry_40m///SimOutput/MATHUSLA_LLPfiles_HXX/deweighted_LLP_bb_35/20240410/173948/reconstruction_v2.root")  
 
-parent_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-datatypes = importlib.machinery.SourceFileLoader("*", parent_dir+"/datatypes.py").load_module()
 
-def load(filename, printn=2000, *args, **kwargs):
+
+
+def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
     # Open the file
     tfile = root.TFile.Open(filename)
     tree_name = tfile.GetListOfKeys()[0].GetName()
@@ -62,6 +58,11 @@ def load(filename, printn=2000, *args, **kwargs):
     # print("  Branches:", branches)
     print("  Entries:", entries)
 
+    if end_event==-1: end_event = entries
+    entries_run = [start_event, min(end_event, entries)]
+    print("  Entries to read:", entries_run)
+    
+
     # Make a dictionary
     data = {
         "inactive":[],
@@ -70,7 +71,7 @@ def load(filename, printn=2000, *args, **kwargs):
     }
 
     # Read the file
-    for entry in range(entries):
+    for entry in range(*entries_run):
         if (entry+1)%printn==0:  print("    event is ", entry+1)
 
         for key in data:

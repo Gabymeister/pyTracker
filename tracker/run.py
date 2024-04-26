@@ -3,6 +3,8 @@ import argparse
 import importlib
 import time
 
+import joblib
+import pickle
 
 
 import kalmanfilter as KF
@@ -10,7 +12,7 @@ import vertexfinder as VF
 import utilities as Util
 import trackfinder as TF
 import datatypes
-
+import 
 
 def main():
 
@@ -28,11 +30,15 @@ def main():
     args = parser.parse_args()
 
     # Initiate file IO
-    current_dir = os.path.dirname(os.path.realpath(__file__))
+    current_dir = os.path.dirname(os.path.realpath(__file__)) # Path to this python file
     io_full_path = current_dir+ f"/io_user/{args.io}.py" if not os.path.exists(args.io) else args.io
     io_user = importlib.machinery.SourceFileLoader("*", io_full_path).load_module()
-    if io_user.exists(output_filename) and not args.overwrite:
-        print("Outfile exists. Processing terminated. Use --overwrite option to force running the tracker, or assign a different suffix by --output_suffix=.")
+    output_filename = os.path.abspath(args.output_directory) \
+                        + "/"+ os.path.splitext(os.path.basename(args.input_filename))[0]\
+                        + args.output_suffix \
+                        + ".joblib"    
+    if os.path.exists(output_filename) and not args.overwrite:
+        print("Output file exists. Processing terminated. Use --overwrite option to force running the tracker, or assign a different suffix by --output_suffix=.")
         return
 
 
@@ -56,7 +62,8 @@ def main():
 
     #-------------------------------------------------------------
     # Load the file
-    data, metadata = io_user.load(args.input_filename)
+    data, metadata = io_user.load(args.input_filename, printn=2000, \
+                                start_event=config.parameters["start_event"], end_event=config.parameters["end_event"])
     
     # Make variables to hold the result
     results = {
@@ -66,7 +73,7 @@ def main():
     }  
     groups = list(data.keys())
     entries = len(data[groups[0]])
-    entries_run = [config.parameters["start_event"], min(config.parameters["end_event"], entries)]
+    # entries_run = [config.parameters["start_event"], min(config.parameters["end_event"], entries)]
 
     # Some numbers for bookkeepping
     tracks_found=0
@@ -75,12 +82,12 @@ def main():
     vertices_found_events=0
 
     # Run track and vertex finding on all events
-    print("Running...")
+    print(f"Running on {entries} events...")
     time_start = time.time()
-    for entry in range(*entries_run):
-        if (entry+1)%config.parameters["print_n"]==0:  
+    for entry in range(entries):
+        if (entry+1)%config.parameters["print_n"]==0 or args.debug:  
             time_stop=time.time()
-            print("    event is ", entry+1, ", time", time_stop-time_start, "seconds")
+            print("    Event is ", entry+1, ", time", time_stop-time_start, "seconds")
 
         results["hits"].append([])
         results["tracks"].append([])
@@ -120,7 +127,7 @@ def main():
     print("Writing file to disk.")
     print("-------------------------")
     print("Summary")
-    print("Events:",entries_run[1]-entries_run[0])
+    print("Events:",entries)
     print("Tracks:",tracks_found)
     print("Vertices:",vertices_found)
     print("Events with track:",tracks_found_events)
@@ -128,11 +135,11 @@ def main():
     print("-------------------------")
 
     # Save the results
-    output_filename = os.path.abspath(args.output_directory) \
-                        + "/"+ os.path.splitext(os.path.basename(args.input_filename))[0]\
-                        + args.output_suffix
-    io_user.dump(results, output_filename)
+    with open(output_filename,"wb") as f:
+        pickle.dump(results, f)
+    # joblib.dump(results, output_filename)
     print("Output saved as",output_filename)
+
 
             
 if __name__ == "__main__":

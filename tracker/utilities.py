@@ -266,17 +266,21 @@ class track:
 
 
     @staticmethod
-    def group_hits_by_layer(hits):
+    def group_hits_by_layer(hits, used_index=[]):
         # Assign a unique index to hits
-        for ihit in range(len(hits)):
-            hits[ihit] = hits[ihit]._replace(ind = ihit)
+        # for ihit in range(len(hits)):
+        #     hits[ihit] = hits[ihit]._replace(ind = ihit)
 
         # Layers
         layers = np.unique([hit.layer for hit in hits])
         HitsLayerGrouped={layer:[] for layer in layers}
         for ihit in range(len(hits)):
-            hit = hits[ihit]
-            HitsLayerGrouped[hit.layer].append(hit)
+            if ihit not in used_index:
+                HitsLayerGrouped[hits[ihit].layer].append(hits[ihit])
+        # Remove empty layer
+        for layer in list(HitsLayerGrouped.keys()):
+            if HitsLayerGrouped[layer]==[]:
+                HitsLayerGrouped.pop(layer)
         return HitsLayerGrouped  
 
     @staticmethod 
@@ -473,10 +477,11 @@ class track:
         Util.track.closest_approach_midpoint(tr1,tr2)
         return: (array([0. , 0. , 0.5, 0. ]), 1.0)
         """
-        
+    
 
         rel_v = tr2[3:6] - tr1[3:6]
         rel_v2 = np.dot(rel_v, rel_v) 
+
 
         # Find the time at midpoint
         displacement = tr1[:3] - tr2[:3]; # position difference
@@ -758,7 +763,7 @@ class vertex:
 
         Lower score means better seed quality and should be used first.
         """
-        x0,y0,z0,t0, midpoint_chi2, dist_seed, N_compatible_tracks, N_compatible_track_distance, seed_track_unc, seed_track_chi2 = seed_par
+        x0,y0,z0,t0, midpoint_chi2, dist_seed, N_compatible_tracks, N_compatible_track_distance, seed_track_unc, seed_track_chi2,seed_track_dist, seed_opening_angle = seed_par
 
         # Score based on the following items:
         # - Seed chi2
@@ -775,7 +780,7 @@ class vertex:
         # score = 3*midpoint_chi2  + dist_seed + 0.1*y0 + 0.1*z0 + 0.2*seed_track_unc -50*N_compatible_tracks + 0.3*N_compatible_track_distance
         # score = 3*midpoint_chi2  + dist_seed + 0.2*seed_track_unc
 
-        score = dist_seed + midpoint_chi2*10 - N_compatible_tracks*50
+        score = dist_seed*0.5 + midpoint_chi2*10 - N_compatible_tracks*50 - seed_opening_angle*200 - seed_track_dist
 
         return score
 
@@ -861,4 +866,14 @@ class general:
         cov_new = general.flip_matrix(cov, flip_index=flip_index)
 
         vertex_new = datatypes.Vertex(*vertex_t[:4], cov_new, chi2, tracks)
-        return hit_new                   
+        return hit_new     
+
+
+
+def dump(data, filename):
+    """
+    Save the processing result
+    """
+    # joblib.dump(data,filename)
+    
+    

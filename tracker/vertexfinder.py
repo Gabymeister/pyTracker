@@ -50,6 +50,10 @@ class VertexFitter:
         self.tracks_remaining = copy.copy(tracks)
         self.tracks_remaining_info = [] # a list of track infomation. Each element is [track_ind, track_chi2, track_vertex_chi2, track_vertex_dist]
 
+        # Seed
+        if self.debug: 
+            print("\n\n--------------------------------------")
+            print("---------Looking for vertex  --------")
         self.seeding(tracks)
         if self.debug: 
             for seed in self.seeds:
@@ -230,30 +234,39 @@ class VertexFitter:
             for j in range(i+1, len(tracks)):
                 # Cut on seed distance
                 midpoint,dist_seed = Util.track.closest_approach_midpoint_Track(tracks[i], tracks[j])
+
                 if dist_seed>self.parameters["cut_vertex_SeedDist"]:
+                    if self.debug: print(f"  Seed ({i,j}) failed, distance is {dist_seed}")
                     continue
  
                 # Cut on seed chi2 (estimated)
-                midpoint_chi2 = Util.track.chi2_point_track(midpoint, tracks[i])+ Util.track.chi2_point_track(midpoint, tracks[j])
+                # midpoint_chi2 = Util.track.chi2_point_track(midpoint, tracks[i])+ Util.track.chi2_point_track(midpoint, tracks[j])
                 # midpoint_err_sum = np.sqrt(np.sum(np.diag(Util.track.cov_point_track(midpoint, tracks[i]))+ np.diag(Util.track.cov_point_track(midpoint, tracks[j]))))
-
 
                 # Cut on seed chi2 (fit)
                 # Fit the seed
                 m = self.fit([tracks[i], tracks[j]], midpoint, hesse=False, strategy=0, tolerance = 1)
-                if (not m.valid) or (m.fval>self.parameters["cut_vertex_SeedChi2"]):
-                    if self.debug: print(f"  * Seed failed, chi2 too large. Seed fit result valid: {m.valid}, seed chi2 {m.fval}")
+                if (not m.valid):
+                    continue
+                if (m.fval>self.parameters["cut_vertex_SeedChi2"]):
+                    if self.debug: print(f"  * Seed ({i,j}) failed, chi2 too large. Seed fit result valid: {m.valid}, seed chi2 {m.fval}")
                     continue 
+                    
                 midpoint = list(m.values)
                 midpoint_chi2 = m.fval
                 midpoint_err_sum = sum(m.errors)
-                if midpoint_chi2>self.parameters["cut_vertex_SeedChi2"]:
-                    continue
+                # dist_seed = 
+                # print(i, j , midpoint_err_sum)
 
-                print(i, j , midpoint_err_sum)
+                v1 = [tracks[i].Ax/tracks[i].At, tracks[i].Az/tracks[i].At, 1/tracks[i].At]
+                v2 = [tracks[j].Ax/tracks[j].At, tracks[j].Az/tracks[j].At, 1/tracks[j].At]
+                seed_opening_angle = np.arccos(np.dot(v1, v2)/np.linalg.norm(v1)/np.linalg.norm(v2))
+                # print(i,j,seed_opening_angle)
 
                 seed_track_unc = np.sum(np.diag(tracks[i].cov)) + np.sum(np.diag(tracks[j].cov))
                 seed_track_chi2 =tracks[i].chi2+tracks[j].chi2
+                seed_track_dist = np.linalg.norm([tracks[i].x0-tracks[j].x0, tracks[i].y0-tracks[j].y0, tracks[i].z0-tracks[j].z0])
+                print(i,j,seed_track_dist)
                 
 
                 # Check number of compatible tracks
@@ -272,7 +285,7 @@ class VertexFitter:
                 N_compatible_track_distance = N_compatible_track_distance/N_compatible_tracks if N_compatible_tracks>0 else N_compatible_track_distance
 
                 ## VertexSeed = namedtuple("VertexSeed",["x0", "y0", "z0", "t0", "cov", "chi2", "dist", "Ntracks", "trackind1","trackind2","score"])
-                seed_score = Util.vertex.score_seed([*midpoint, midpoint_chi2, dist_seed, N_compatible_tracks, N_compatible_track_distance, seed_track_unc, seed_track_chi2])
+                seed_score = Util.vertex.score_seed([*midpoint, midpoint_chi2, dist_seed, N_compatible_tracks, N_compatible_track_distance, seed_track_unc, seed_track_chi2, seed_track_dist, seed_opening_angle])
                 seed_found = datatypes.VertexSeed(*midpoint, 0, midpoint_chi2, dist_seed, N_compatible_tracks, i, j, seed_score)
                 seeds.append(seed_found)
 

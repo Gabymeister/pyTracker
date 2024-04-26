@@ -7,3 +7,18 @@ The Kalman filter parameter names follows the convention of Fruhwirth paper (APP
 TODO:
 1. Tracker: Add multiple scattering matrix calculation 
 2. Tracker: Add seed ranking
+
+
+
+## Dependencies
+
+```bash
+cd ~
+wget https://root.cern/download/root_v6.28.12.Linux-ubuntu22-x86_64-gcc11.4.tar.gz
+tar xvzf root_v6.28.12.Linux-ubuntu22-x86_64-gcc11.4.tar.gz
+echo "source ~/root/bin/thisroot.sh" >> ~/.bashrc
+
+python -m venv venv_mathusla
+echo "alias venv='source ~/venv_mathusla/bin/activate'" >> ~/.bashrc
+pip install pyqt6 opencv-python-headless uproot numpy scipy matplotlib ipython jupyter iminuit tqdm joblib scikit-learn uncertainties h5py
+```
