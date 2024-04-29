@@ -8,9 +8,9 @@ TODO:
 1. Tracker: Add multiple scattering matrix calculation 
 2. Tracker: Add seed ranking
 
+## Install
 
-
-## Dependencies
+### Dependencies
 
 ```bash
 cd ~
@@ -22,3 +22,6 @@ python -m venv venv_mathusla
 echo "alias venv='source ~/venv_mathusla/bin/activate'" >> ~/.bashrc
 pip install pyqt6 opencv-python-headless uproot numpy scipy matplotlib ipython jupyter iminuit tqdm joblib scikit-learn uncertainties h5py
 ```
+
+## 
+pip install -e . --user

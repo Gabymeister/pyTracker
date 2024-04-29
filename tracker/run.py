@@ -7,12 +7,12 @@ import joblib
 import pickle
 
 
-import kalmanfilter as KF
-import vertexfinder as VF
-import utilities as Util
-import trackfinder as TF
-import datatypes
-import 
+from . import kalmanfilter as KF
+from . import vertexfinder as VF
+from . import utilities as Util
+from . import trackfinder as TF
+from . import datatypes
+from . import config_default as config
 
 def main():
 
@@ -43,12 +43,11 @@ def main():
 
 
     # Parse the configuration
-    config   = importlib.machinery.SourceFileLoader("*", "config_default.py").load_module()
     if len(args.config)>0:
         try:
             config_user = importlib.machinery.SourceFileLoader("*", args.config).load_module()
             for key in config_user:
-                config[key]=config_user[key]
+                config[key]=config_user.parameters[key]
         except Exception as E:
             print("Error loading config file. Error:",E)
 
@@ -87,7 +86,7 @@ def main():
     for entry in range(entries):
         if (entry+1)%config.parameters["print_n"]==0 or args.debug:  
             time_stop=time.time()
-            print("    Event is ", entry+1, ", time", time_stop-time_start, "seconds")
+            print("    Event is ", entry+config.parameters["start_event"], ", time", time_stop-time_start, "seconds")
 
         results["hits"].append([])
         results["tracks"].append([])
@@ -101,8 +100,14 @@ def main():
             if group!="inactive":
                 # Rotate hits so that y is always the layer direction
                 if metadata["groups"][group]["flip_index"] is not None:
-                    hits_new = [Util.general.flip_hit(hit, metadata["groups"][group]["flip_index"]) for hit in hits]
-
+                    hits = [Util.general.flip_hit(hit, metadata["groups"][group]["flip_index"]) for hit in hits]
+                    
+                # Apply detector efficiency
+                if 0<config.parameters["detector_efficiency"]<1:
+                    hits = Util.processing.drop_hits(hits, config.parameters["detector_efficiency"], config.parameters["seed"])
+                elif config.parameters["detector_efficiency"]!=1:
+                    print("  Warning: detector efficiency is not in the range of (0,1]. Using default value 1.")
+                    
                 # Run track and vertex reconstruction
                 tracks = tf.run(hits)
                 vertices = vf.run(tracks) 

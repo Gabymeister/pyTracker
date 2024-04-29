@@ -29,26 +29,34 @@
 ##      """
 
 
-import math, os, sys
+import math, os, sys, types
 import importlib
+from collections import namedtuple
 
-import ROOT as root
+
+import ROOT
 import joblib
+import numpy as np
 
-sys.path.append("..")
-import datatypes
+# sys.path.append("..")
+# from .. import datatypes
 
 # Test:
 # import importlib
 # io_user = importlib.machinery.SourceFileLoader("*", "io_mu-simulation.py").load_module()
-# io_user.load("/project/rrg-mdiamond/tomren/mudata/LLP_geometry_40m///SimOutput/MATHUSLA_LLPfiles_HXX/deweighted_LLP_bb_35/20240410/173948/reconstruction_v2.root")  
+# io_user.load("/project/rrg-mdiamond/tomren/mudata/LLP_geometry_40m///SimOutput/MATHUSLA_LLPfiles_HXX/deweighted_LLP_bb_35/20240410/173948/reconstruction_v2.ROOT")  
 
+class datatypes:
+    Hit = namedtuple("Hit", ["x", "y", "z", "t", "x_err", "y_err", "z_err", "t_err","layer", "ind"])
+    Track = namedtuple("Track", ["x0", "y0", "z0", "t0", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
+    Vertex = namedtuple("Vertex", ["x0", "y0", "z0", "t0", "cov", "chi2", "tracks"])
+    VertexSeed = namedtuple("VertexSeed",["x0", "y0", "z0", "t0",  "cov", "chi2","dist", "Ntracks", "trackind1","trackind2", "score"])
 
 
 
 def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
     # Open the file
-    tfile = root.TFile.Open(filename)
+    tfile = ROOT.TFile.Open(filename)
     tree_name = tfile.GetListOfKeys()[0].GetName()
     Tree = tfile.Get(tree_name)
     branches = [Tree.GetListOfBranches()[i].GetName() for i in range(len(Tree.GetListOfBranches()))]
@@ -110,7 +118,21 @@ def exists(filename):
 # Helper functions
 # ----------------------------------------------------------
 
+def open(filename):
+    tfile = ROOT.TFile.Open(filename)
+    return tfile
 
+def get_tree(tfile):
+    Tree = tfile.Get(tfile.GetListOfKeys()[0].GetName())
+    def keys(Tree):
+        branch_list = [Tree.GetListOfBranches()[i].GetName() for i in range(len(Tree.GetListOfBranches()))]
+        return branch_list
+    Tree.keys = types.MethodType(keys,Tree)
+    # print(Tree.keys())
+    # Tree.keys = branch_list
+    
+    return Tree    
+    
 
 def c2list(x):
     return [x.at(i) for i in range(x.size())]

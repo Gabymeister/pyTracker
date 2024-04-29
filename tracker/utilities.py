@@ -7,8 +7,8 @@ import scipy as sp
 import iminuit
 
 
-import kalmanfilter as KF
-import datatypes
+from . import kalmanfilter as KF
+from . import datatypes
 
 class hit:
     @staticmethod
@@ -275,7 +275,7 @@ class track:
         layers = np.unique([hit.layer for hit in hits])
         HitsLayerGrouped={layer:[] for layer in layers}
         for ihit in range(len(hits)):
-            if ihit not in used_index:
+            if hits[ihit].ind not in used_index:
                 HitsLayerGrouped[hits[ihit].layer].append(hits[ihit])
         # Remove empty layer
         for layer in list(HitsLayerGrouped.keys()):
@@ -514,7 +514,7 @@ class track:
 
 
     @staticmethod
-    def line_distance(tr1,tr2,time):
+    def line_distance(tr1,tr2,time_center):
         """ 
         Calculate the distance of two lines at a certain time
         INPUT:
@@ -524,8 +524,8 @@ class track:
         time: float
             the time to calculate distance
         """
-        pos1 = tr1[:3] + tr1[3:6]*(t_ca - tr1[6])
-        pos2 = tr2[:3] + tr2[3:6]*(t_ca - tr2[6])  
+        pos1 = tr1[:3] + tr1[3:6]*(time_center - tr1[6])
+        pos2 = tr2[:3] + tr2[3:6]*(time_center - tr2[6])  
         displacement = pos1-pos2
         
         return np.dot(displacement,displacement) 
@@ -866,7 +866,7 @@ class general:
         cov_new = general.flip_matrix(cov, flip_index=flip_index)
 
         vertex_new = datatypes.Vertex(*vertex_t[:4], cov_new, chi2, tracks)
-        return hit_new     
+        return vertex_new     
 
 
 
@@ -874,6 +874,7 @@ def dump(data, filename):
     """
     Save the processing result
     """
+    return
     # joblib.dump(data,filename)
     
     

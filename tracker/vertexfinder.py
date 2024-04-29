@@ -10,9 +10,9 @@ import iminuit
 
 
 # Internal modules
-import utilities as Util
-import kalmanfilter as KF
-import datatypes
+from . import utilities as Util
+from . import kalmanfilter as KF
+from . import datatypes
 
 
 
@@ -238,6 +238,10 @@ class VertexFitter:
                 if dist_seed>self.parameters["cut_vertex_SeedDist"]:
                     if self.debug: print(f"  Seed ({i,j}) failed, distance is {dist_seed}")
                     continue
+                
+                if tracks[i].x0==tracks[j].x0:
+                    print("----------------Warning-------------")
+                    print(i,j)
  
                 # Cut on seed chi2 (estimated)
                 # midpoint_chi2 = Util.track.chi2_point_track(midpoint, tracks[i])+ Util.track.chi2_point_track(midpoint, tracks[j])
@@ -266,7 +270,7 @@ class VertexFitter:
                 seed_track_unc = np.sum(np.diag(tracks[i].cov)) + np.sum(np.diag(tracks[j].cov))
                 seed_track_chi2 =tracks[i].chi2+tracks[j].chi2
                 seed_track_dist = np.linalg.norm([tracks[i].x0-tracks[j].x0, tracks[i].y0-tracks[j].y0, tracks[i].z0-tracks[j].z0])
-                print(i,j,seed_track_dist)
+                # print(i,j,seed_track_dist)
                 
 
                 # Check number of compatible tracks

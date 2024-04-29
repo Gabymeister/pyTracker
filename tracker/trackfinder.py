@@ -7,9 +7,9 @@ import scipy as sp
 import scipy.constants
 
 # Internal modules
-import utilities as Util
-import kalmanfilter as KF
-import datatypes
+from . import utilities as Util
+from . import kalmanfilter as KF
+from . import datatypes
 
 
 # ----------------------------------------------------------------------
@@ -24,10 +24,10 @@ class TrackFinder:
             "cut_track_HitProjectionSigma": 10,     # Number of sigmas
             "cut_track_TrackChi2Reduced": 3,        # Only use this for track with 3 hits
             "cut_track_TrackChi2Prob": 0.9,         # Chi-square probablity (calculated from chi2_cdf(x, DOF))
+            "cut_track_TrackNHitsMin": 3,           # Minimum number of hits per track
             "cut_track_TrackSpeed": [25,35],        # [cm/ns], [speed_low, speed_high]. 30 is the speed of light
-            "cut_track_TrackNHitsMin": 3,
-            "cut_track_MultipleScatteringFind": False,
             "fit_track_MultipleScattering": False,
+            "cut_track_MultipleScatteringFind": False,
             "fit_track_Method": "backward", # choose one of {"backward", "forward", "forward-seed", "least-square", "least-square-ana"}
             "fit_track_LeastSquareIters":2, # No need to change
             "multiple_scattering_p": 500, # [MeV/c] momentum of multiple scattering, 
@@ -53,7 +53,8 @@ class TrackFinder:
             self.seeds = self.seeding(self.hits, used_index=hit_found_inds)
             self.hits_found_all = []
             while len(self.seeds)>0:
-                # ------------------------------------
+                if len(self.hits_grouped.keys())<=2: # If not enough hits left:
+                    break                 # ------------------------------------
                 # Round 1: Find hits that belongs to one track
                 seed = self.seeds[-1]; 
                 if self.debug: print(f"--- New seed --- \n [Seed]: {seed}")
@@ -147,17 +148,23 @@ class TrackFinder:
 
                 # Remove other seeds that shares hits of the found track
                 self.remove_related_hits_seeds(hits_found)
-                self.hits_found_all.extend(hits_found)                
-
+                self.hits_found_all.extend(hits_found)  
+                                 
+                # print("track found inds", [hit.ind for hit in hits_found])
+                # print("remaining hits")
+                # for layer in self.hits_grouped:
+                #     print('layer:', layer)
+                #     print([hit.ind for hit in self.hits_grouped[layer]])
             # Remove hits that are already added to track
             hit_found_inds.extend([hit.ind for hit in self.hits_found_all])
             hit_found_inds.sort(reverse=True)
+            # print("------------------decreasinglayer")
+            # print(hit_found_inds)
             # for ind in hit_found_inds:
             #     self.hits.pop(ind)
             # Group the remaining hits
-            self.hits_grouped = Util.track.group_hits_by_layer(self.hits, used_index = hit_found_inds)
-            if len(self.hits_grouped.keys())<=2:
-                break
+            # self.hits_grouped = Util.track.group_hits_by_layer(self.hits, used_index = hit_found_inds)
+
 
 
         if self.debug:
