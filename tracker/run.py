@@ -7,12 +7,12 @@ import joblib
 import pickle
 
 
-from . import kalmanfilter as KF
-from . import vertexfinder as VF
-from . import utilities as Util
-from . import trackfinder as TF
-from . import datatypes
-from . import config_default as config
+from tracker import kalmanfilter as KF
+from tracker import vertexfinder as VF
+from tracker import utilities as Util
+from tracker import trackfinder as TF
+from tracker import datatypes
+from tracker import config_default as config
 
 def main():
 
