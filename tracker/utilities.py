@@ -874,9 +874,10 @@ class processing:
     @staticmethod
     def drop_hits(hits, efficiency, seed):
         rng = np.random.default_rng(seed)
-        hits_keep_mask = rng.binomial(len(hits), efficiency)
+        hits_keep_mask = rng.binomial(1, efficiency, len(hits))
         for i in range(len(hits))[::-1]:
-            if not hits_keep_mask[i]:
-                hits.pop(1)
+            if hits_keep_mask[i]==0:
+                hits.pop(i)
+        return hits 
 
     
