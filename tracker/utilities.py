@@ -870,11 +870,13 @@ class general:
 
 
 
-def dump(data, filename):
-    """
-    Save the processing result
-    """
-    return
-    # joblib.dump(data,filename)
-    
+class processing:
+    @staticmethod
+    def drop_hits(hits, efficiency, seed):
+        rng = np.random.default_rng(seed)
+        hits_keep_mask = rng.binomial(len(hits), efficiency)
+        for i in range(len(hits))[::-1]:
+            if not hits_keep_mask[i]:
+                hits.pop(1)
+
     

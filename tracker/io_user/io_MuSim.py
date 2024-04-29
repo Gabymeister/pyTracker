@@ -39,18 +39,18 @@ import joblib
 import numpy as np
 
 # sys.path.append("..")
-# from .. import datatypes
+import tracker.datatypes as datatypes
 
 # Test:
 # import importlib
 # io_user = importlib.machinery.SourceFileLoader("*", "io_mu-simulation.py").load_module()
 # io_user.load("/project/rrg-mdiamond/tomren/mudata/LLP_geometry_40m///SimOutput/MATHUSLA_LLPfiles_HXX/deweighted_LLP_bb_35/20240410/173948/reconstruction_v2.ROOT")  
 
-class datatypes:
-    Hit = namedtuple("Hit", ["x", "y", "z", "t", "x_err", "y_err", "z_err", "t_err","layer", "ind"])
-    Track = namedtuple("Track", ["x0", "y0", "z0", "t0", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
-    Vertex = namedtuple("Vertex", ["x0", "y0", "z0", "t0", "cov", "chi2", "tracks"])
-    VertexSeed = namedtuple("VertexSeed",["x0", "y0", "z0", "t0",  "cov", "chi2","dist", "Ntracks", "trackind1","trackind2", "score"])
+# class datatypes:
+#     Hit = namedtuple("Hit", ["x", "y", "z", "t", "x_err", "y_err", "z_err", "t_err","layer", "ind"])
+#     Track = namedtuple("Track", ["x0", "y0", "z0", "t0", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
+#     Vertex = namedtuple("Vertex", ["x0", "y0", "z0", "t0", "cov", "chi2", "tracks"])
+#     VertexSeed = namedtuple("VertexSeed",["x0", "y0", "z0", "t0",  "cov", "chi2","dist", "Ntracks", "trackind1","trackind2", "score"])
 
 
 
@@ -61,7 +61,7 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
     Tree = tfile.Get(tree_name)
     branches = [Tree.GetListOfBranches()[i].GetName() for i in range(len(Tree.GetListOfBranches()))]
     entries = Tree.GetEntries()
-    print("Opening ROOT file", filename)
+    print("\nOpening ROOT file", filename)
     print("  Tree:", tree_name)
     # print("  Branches:", branches)
     print("  Entries:", entries)
@@ -80,7 +80,7 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
 
     # Read the file
     for entry in range(*entries_run):
-        if (entry+1)%printn==0:  print("    event is ", entry+1)
+        if (entry+1)%printn==0:  print("  event is ", entry+1)
 
         for key in data:
             data[key].append([])
@@ -106,6 +106,9 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
 
 
 def dump(data, filename):
+    
+    # with open(output_filename,"wb") as f:
+    #     pickle.dump(results, f)    
     joblib.dump(data,filename+".joblib")
 
 def exists(filename):

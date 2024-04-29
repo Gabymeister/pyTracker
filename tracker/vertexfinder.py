@@ -1,5 +1,6 @@
 
 import copy
+import os,sys
 from collections import namedtuple
 
 import numpy as np
@@ -240,7 +241,7 @@ class VertexFitter:
                     continue
                 
                 if tracks[i].x0==tracks[j].x0:
-                    print("----------------Warning-------------")
+                    print("----------------Warning, track duplicated-------------")
                     print(i,j)
  
                 # Cut on seed chi2 (estimated)
@@ -249,7 +250,11 @@ class VertexFitter:
 
                 # Cut on seed chi2 (fit)
                 # Fit the seed
-                m = self.fit([tracks[i], tracks[j]], midpoint, hesse=False, strategy=0, tolerance = 1)
+                try:
+                    m = self.fit([tracks[i], tracks[j]], midpoint, hesse=False, strategy=0, tolerance = 10)
+                except KeyboardInterrupt:
+                    print("Keyboard interrupt")
+                    sys.exit(130)
                 if (not m.valid):
                     continue
                 if (m.fval>self.parameters["cut_vertex_SeedChi2"]):

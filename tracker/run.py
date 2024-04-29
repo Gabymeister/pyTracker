@@ -46,10 +46,10 @@ def main():
     if len(args.config)>0:
         try:
             config_user = importlib.machinery.SourceFileLoader("*", args.config).load_module()
-            for key in config_user:
-                config[key]=config_user.parameters[key]
+            for key in config_user.parameters:
+                config.parameters[key]=config_user.parameters[key]
         except Exception as E:
-            print("Error loading config file. Error:",E)
+            print("Error loading config file:",E)
 
     # Initiate Track and Vertex finder
     tf = TF.TrackFinder(method="greedy", debug=(config.parameters["debug_tracker"] | config.parameters["debug"] | args.debug))
@@ -86,7 +86,7 @@ def main():
     for entry in range(entries):
         if (entry+1)%config.parameters["print_n"]==0 or args.debug:  
             time_stop=time.time()
-            print("    Event is ", entry+config.parameters["start_event"], ", time", time_stop-time_start, "seconds")
+            print("  Event is ", entry+config.parameters["start_event"], ", time", time_stop-time_start, "seconds")
 
         results["hits"].append([])
         results["tracks"].append([])
@@ -129,20 +129,18 @@ def main():
         vertices_found_events += event_vertices>0
     time_stop=time.time()
     print("Finished. Total time",time_stop-time_start, "seconds")
-    print("Writing file to disk.")
     print("-------------------------")
     print("Summary")
-    print("Events:",entries)
-    print("Tracks:",tracks_found)
-    print("Vertices:",vertices_found)
-    print("Events with track:",tracks_found_events)
-    print("Events with vertex:",vertices_found_events)
+    print("  Events:",entries)
+    print("  Tracks:",tracks_found)
+    print("  Vertices:",vertices_found)
+    print("  Events with track:",tracks_found_events)
+    print("  Events with vertex:",vertices_found_events)
     print("-------------------------")
 
     # Save the results
-    with open(output_filename,"wb") as f:
-        pickle.dump(results, f)
-    # joblib.dump(results, output_filename)
+    print("Writing file to disk.")
+    joblib.dump(results, output_filename)
     print("Output saved as",output_filename)
 
 

@@ -262,6 +262,8 @@ class TrackFinder:
         else:
             TRACK_DIRECTION = 1 # Upward track
             FIND_BACKWARD_LAYERS = LAYERS[:np.argmax(LAYERS>seed_stop_layer)-1][::-1]
+            
+        # print(seed_hits[0].layer , seed_hits[1].layer, LAYERS,seed_stop_layer)
 
         FIND_FORWARD = True # Always find forward
         FIND_BACKWARD= True if len(FIND_BACKWARD_LAYERS)>1 else False  # Find backwards only when there are more than one layer before the second hit in of the seed
@@ -469,7 +471,7 @@ class TrackFinder:
         # Need to do backwards to not change the index
         for i in reversed(range(len(self.seeds))):
             seed = self.seeds[i]
-            if (seed[0] in hits_found_inds) or (seed[1] in hits_found_inds):
+            if (self.hits[seed[0]].ind in hits_found_inds) or (self.hits[seed[1]].ind in hits_found_inds):
                 self.seeds.pop(i)
 
         # Redo the grouping
