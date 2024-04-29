@@ -14,6 +14,7 @@ import iminuit
 from . import utilities as Util
 from . import kalmanfilter as KF
 from . import datatypes
+import functools; print = functools.partial(print, flush=True) #make python actually flush the output!
 
 
 
@@ -105,7 +106,10 @@ class VertexFitter:
                 
             # ------------------------------------
             # Round 3: Final fit, use smaller tolerance (0.1) and more accurate strategy (1)
-            vertex_fit = self.fit(tracks_found, vertex_location, hesse=False, strategy=1, tolerance = 0.1)
+            vertex_fit = self.fit(tracks_found, vertex_location, hesse=True, strategy=1, tolerance = 0.1)
+            if not vertex_fit.valid:
+                if self.debug: print("Vertex vetoed, final fit failed.")
+                continue
             vertex_location =  np.array(vertex_fit.values) 
             vertex_cov =  np.array(vertex_fit.covariance) 
             vertex_chi2 = vertex_fit.fval 

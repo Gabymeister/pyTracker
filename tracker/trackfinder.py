@@ -10,6 +10,7 @@ import scipy.constants
 from . import utilities as Util
 from . import kalmanfilter as KF
 from . import datatypes
+import functools; print = functools.partial(print, flush=True) #make python actually flush the output!
 
 
 # ----------------------------------------------------------------------

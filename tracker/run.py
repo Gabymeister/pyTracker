@@ -13,6 +13,7 @@ from tracker import utilities as Util
 from tracker import trackfinder as TF
 from tracker import datatypes
 from tracker import config_default as config
+import functools; print = functools.partial(print, flush=True) #make python actually flush the output!
 
 def main():
 
