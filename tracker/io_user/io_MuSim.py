@@ -180,13 +180,13 @@ def make_hits(x, y, z, t, ylayers):
     hits=[]
     for i, layer in enumerate(ylayers):
         if layer%2==1:
-            hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_trans, unc_thick, unc_long, unc_time, layer, i, 0))
+            hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_trans, unc_thick, unc_long, unc_time, layer, i, 0, 0))
         else:
-            hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_long, unc_thick, unc_trans, unc_time, layer, i, 0))         
+            hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_long, unc_thick, unc_trans, unc_time, layer, i, 0, 0))         
             
     return hits  
 
-def make_hits_newsim(x, y, z, t, layer_id, layer_direction, bar_direction, det_id):
+def make_hits_newsim(x, y, z, t, layer_id, layer_direction, bar_direction, det_id, digi_type):
     hits=[]
     # layer_direction_mod ={0:1, 1:2, 2:0}
     
@@ -196,7 +196,7 @@ def make_hits_newsim(x, y, z, t, layer_id, layer_direction, bar_direction, det_i
         unc[layer_direction[i]] = unc_thick
         unc[bar_direction[i]] = unc_long
         unc[other_direction] = unc_trans
-        hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc[0], unc[1], unc[2], unc_time, layer, i,det_id[i]))
+        hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc[0], unc[1], unc[2], unc_time, layer, i,det_id[i], digi_type))
             
     return hits 
 
@@ -214,7 +214,8 @@ def root_hits_extractor(Tree, entry, version):
         Digi_layer_direction = c2list(Tree.Digi_layer_direction)
         Digi_bar_direction = c2list(Tree.Digi_bar_direction)
         Digi_det_id = c2list(Tree.Digi_det_id)
-        return make_hits_newsim(Digi_x, Digi_y, Digi_z, Digi_t, Digi_layer, Digi_layer_direction, Digi_bar_direction, Digi_det_id)
+        Digi_type = c2list(Tree.Digi_type)
+        return make_hits_newsim(Digi_x, Digi_y, Digi_z, Digi_t, Digi_layer, Digi_layer_direction, Digi_bar_direction, Digi_det_id, Digi_type)
         
         
 
