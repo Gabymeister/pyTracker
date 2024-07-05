@@ -1,16 +1,10 @@
-# Track finding with Kalman filter
+# Python package for track and vertex reconstruction
 
+## Installation
 
-The Kalman filter parameter names follows the convention of Fruhwirth paper (APPLICATION OF KALMAN FILTERING TO TRACK AND VERTEX FITTING).
+### Local (Ubuntu)
 
-
-TODO:
-1. Tracker: Add multiple scattering matrix calculation 
-2. Tracker: Add seed ranking
-
-## Install
-
-### Dependencies
+Install cern ROOT, and then install python packages with a virtual environment.
 
 ```bash
 cd ~
@@ -20,8 +14,57 @@ echo "source ~/root/bin/thisroot.sh" >> ~/.bashrc
 
 python -m venv venv_mathusla
 echo "alias venv='source ~/venv_mathusla/bin/activate'" >> ~/.bashrc
-pip install pyqt6 opencv-python-headless uproot numpy scipy matplotlib ipython jupyter iminuit tqdm joblib scikit-learn uncertainties h5py
+venv
+pip install numpy scipy matplotlib iminuit tqdm joblib scikit-learn uncertainties
+
+git clone https://github.com/EdmondRen/pyTracker.git
+cd pyTracker
+pip install -e .
 ```
 
-## 
-pip install -e . --user
+### Compute Canada
+
+The SuperCDMS software release via singularity image has all the dependencies. The python package can be installed through the login shell of the singularity image. `--user` option is needed. 
+
+```bash
+module use --append /project/def-mdiamond/soft/modules
+module load scdms/V05-00
+singularity-shell
+git clone https://github.com/EdmondRen/pyTracker.git
+cd pyTracker
+pip install -e .  --user
+```
+
+
+## Usage
+
+The main program is tracker/run.py, which will run the track and vertex finding and reconstruction.
+
+Once installed, the program can be run directly with the format of
+
+    pytracker [-h] [--output_suffix OUTPUT_SUFFIX] [--io IO] [--config CONFIG] [--printn PRINTN] [--debug] [--overwrite] input_filename output_directory  
+    
+    positional arguments:
+    input_filename        Path: input filename
+    output_directory      Path: output directory
+
+    options:
+    -h, --help            show this help message and exit
+    --output_suffix OUTPUT_SUFFIX
+                            Path: (optional) suffix to the output filename
+    --io IO               IO module to parse the input file. Default is io_MuSim in ./io_user/. Provide the full path if the IO file is not under ./io_user/
+    --config CONFIG       Path: configuration file. Default configuration (config_defaut.py) will be used if no config file is provided.
+    --printn PRINTN       Print every [printn] event
+    --debug               Show debug info
+    --overwrite           Overwrite the existing output file
+
+
+## Technical details
+
+
+### Track reconstruction
+
+The Kalman filter parameter names follows the convention of Fruhwirth paper (APPLICATION OF KALMAN FILTERING TO TRACK AND VERTEX FITTING).
+
+### Vertex reconstruction
+

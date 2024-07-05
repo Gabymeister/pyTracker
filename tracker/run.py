@@ -18,12 +18,12 @@ import functools; print = functools.partial(print, flush=True) #make python actu
 def main():
 
     parser = argparse.ArgumentParser(     
-                prog='pyTracker',
+                prog='pytracker',
                 description='Reconstructing track and vertex without magnetic field.',)
     parser.add_argument('input_filename',    type=str, help='Path: input filename')
-    parser.add_argument('output_directory',  type=str, help='Path: output directory')
+    parser.add_argument('output_directory',  type=str, help='Path: output directory. The output filename is the output directory + basename of input filename + output_suffix + .joblib')
     parser.add_argument('--output_suffix',   type=str, default="", help='Path: (optional) suffix to the output filename')
-    parser.add_argument('--io',     default="io_MuSim",  type=str, help='IO module to parse the input file. Default is io_MuSim in ./io_user/. Provide the full path if the IO file is not under ./io_user/')
+    parser.add_argument('--io',     default="io_MuSim",  type=str, help='IO module to parse the input file. Default IO is for Mathusla simulation ROOT file ./io_user/io_MuSim.py. Provide the full path if the IO file is not under ./io_user/')
     parser.add_argument('--config', default="",  type=str, help='Path: configuration file. Default configuration (config_defaut.py) will be used if no config file is provided.')
     parser.add_argument('--printn', default=1000,  type=int, help='Print every [printn] event')
     parser.add_argument('--debug',  action='store_true', help='Show debug info')

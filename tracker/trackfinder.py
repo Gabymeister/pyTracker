@@ -54,7 +54,7 @@ class TrackFinder:
             self.seeds = self.seeding(self.hits, used_index=hit_found_inds)
             self.hits_found_all = []
             while len(self.seeds)>0:
-                if len(self.hits_grouped.keys())<=2: # If not enough hits left:
+                if len(self.hits_grouped.keys())<self.parameters["cut_track_TrackNHitsMin"]: # If not enough hits left:
                     break                 # ------------------------------------
                 # Round 1: Find hits that belongs to one track
                 seed = self.seeds[-1]; 
@@ -66,7 +66,8 @@ class TrackFinder:
                 # If not enough hits, drop this track
                 if len(hits_found)<track_TrackNHitsMin or len(hits_found)==2:
                     if self.debug: print(f"   finding failed (adding), not enough hits. Hits found: {len(hits_found)}")
-                    continue            
+                    continue
+                # Remove the seed if it is not
 
 
 
