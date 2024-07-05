@@ -3,7 +3,7 @@ import argparse
 import importlib
 import time
 
-import joblib
+# import joblib
 import pickle
 
 
@@ -21,7 +21,7 @@ def main():
                 prog='pytracker',
                 description='Reconstructing track and vertex without magnetic field.',)
     parser.add_argument('input_filename',    type=str, help='Path: input filename')
-    parser.add_argument('output_directory',  type=str, help='Path: output directory. The output filename is the output directory + basename of input filename + output_suffix + .joblib')
+    parser.add_argument('output_directory',  type=str, help='Path: output directory. The output filename is the output directory + basename of input filename + output_suffix + .pkl')
     parser.add_argument('--output_suffix',   type=str, default="", help='Path: (optional) suffix to the output filename')
     parser.add_argument('--io',     default="io_MuSim",  type=str, help='IO module to parse the input file. Default IO is for Mathusla simulation ROOT file ./io_user/io_MuSim.py. Provide the full path if the IO file is not under ./io_user/')
     parser.add_argument('--config', default="",  type=str, help='Path: configuration file. Default configuration (config_defaut.py) will be used if no config file is provided.')
@@ -37,7 +37,7 @@ def main():
     output_filename = os.path.abspath(args.output_directory) \
                         + "/"+ os.path.splitext(os.path.basename(args.input_filename))[0]\
                         + args.output_suffix \
-                        + ".joblib"    
+                        + ".pkl"    
     if os.path.exists(output_filename) and not args.overwrite:
         print("Output file exists. Processing terminated. Use --overwrite option to force running the tracker, or assign a different suffix by --output_suffix=.")
         return
@@ -46,7 +46,7 @@ def main():
     # Parse the configuration
     if len(args.config)>0:
         try:
-            config_user = importlib.machinery.SourceFileLoader("*", args.config).load_module()
+            config_user = importlib.machinery.SourceFileLoader("*", os.path.abspath(args.config)).load_module()
             for key in config_user.parameters:
                 config.parameters[key]=config_user.parameters[key]
         except Exception as E:
@@ -141,7 +141,9 @@ def main():
 
     # Save the results
     print("Writing file to disk.")
-    joblib.dump(results, output_filename)
+    # joblib.dump(results, output_filename)
+    with open(output_filename,"wb") as f:
+        pickle.dump(results, f)  
     print("Output saved as",output_filename)
 
 

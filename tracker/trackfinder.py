@@ -5,6 +5,7 @@ import numpy as np
 from numpy.linalg import inv
 import scipy as sp
 import scipy.constants
+import scipy.stats
 
 # Internal modules
 from . import utilities as Util
@@ -44,6 +45,7 @@ class TrackFinder:
         self.hits_grouped = Util.track.group_hits_by_layer(self.hits)
         self.total_layers = len(list(self.hits_grouped.keys()))
         self.tracks = []
+        self.seeds = self.seeding(self.hits)
 
         if self.parameters["cut_track_TrackNHitsMin"]>self.total_layers:
             return self.tracks
@@ -51,8 +53,8 @@ class TrackFinder:
         hit_found_inds = []
         for track_TrackNHitsMin in range(self.parameters["cut_track_TrackNHitsMin"], self.total_layers+1)[::-1]:
             if self.debug: print(f"\n\n================Looking for track with {track_TrackNHitsMin} hits=============")
-            self.seeds = self.seeding(self.hits, used_index=hit_found_inds)
-            self.hits_found_all = []
+            hits_found_all = []
+            self.seeds_unused = []
             while len(self.seeds)>0:
                 if len(self.hits_grouped.keys())<self.parameters["cut_track_TrackNHitsMin"]: # If not enough hits left:
                     break                 # ------------------------------------
@@ -64,11 +66,12 @@ class TrackFinder:
                 self.seeds.pop(-1)                
                 # Apply cuts
                 # If not enough hits, drop this track
-                if len(hits_found)<track_TrackNHitsMin or len(hits_found)==2:
+                if len(hits_found)<track_TrackNHitsMin:
                     if self.debug: print(f"   finding failed (adding), not enough hits. Hits found: {len(hits_found)}")
+                    # Keep the seeds that potentially matches to a track
+                    if len(hits_found)>=self.parameters["cut_track_TrackNHitsMin"]:
+                        self.seeds_unused.append(seed)                    
                     continue
-                # Remove the seed if it is not
-
 
 
                 # Sort the hits by time before running the filter
@@ -83,7 +86,10 @@ class TrackFinder:
                 # If not enough hits, drop this track
                 if len(hits_found)<track_TrackNHitsMin:
                     if self.debug: print(f"   finding failed (dropping), not enough hits. Hits found: {len(hits_found)}")
-                    continue                    
+                    # Keep the seeds that potentially matches to a track
+                    if len(hits_found)>=self.parameters["cut_track_TrackNHitsMin"]:
+                        self.seeds_unused.append(seed)   
+                    continue 
 
 
                 # # ------------------------------------
@@ -150,7 +156,7 @@ class TrackFinder:
 
                 # Remove other seeds that shares hits of the found track
                 self.remove_related_hits_seeds(hits_found)
-                self.hits_found_all.extend(hits_found)  
+                hits_found_all.extend(hits_found)  
                                  
                 # print("track found inds", [hit.ind for hit in hits_found])
                 # print("remaining hits")
@@ -158,8 +164,10 @@ class TrackFinder:
                 #     print('layer:', layer)
                 #     print([hit.ind for hit in self.hits_grouped[layer]])
             # Remove hits that are already added to track
-            hit_found_inds.extend([hit.ind for hit in self.hits_found_all])
+            hit_found_inds.extend([hit.ind for hit in hits_found_all])
             hit_found_inds.sort(reverse=True)
+            self.remove_related_seeds(self.seeds_unused, hits_found_all)
+            self.seeds = copy.copy(self.seeds_unused)
             # print("------------------decreasinglayer")
             # print(hit_found_inds)
             # for ind in hit_found_inds:
@@ -485,6 +493,16 @@ class TrackFinder:
 
             if len(hits)==0:
                 self.hits_grouped.pop(layer)
+                
+    def remove_related_seeds(self, seeds, hits_found):
+        hits_found_inds = [hit.ind for hit in hits_found]
+        hits_found_inds.sort(reverse=True)
+        # Remove seeds 
+        # Need to do backwards to not change the index
+        for i in reversed(range(len(seeds))):
+            seed = seeds[i]
+            if (self.hits[seed[0]].ind in hits_found_inds) or (self.hits[seed[1]].ind in hits_found_inds):
+                seeds.pop(i)           
 
 
 

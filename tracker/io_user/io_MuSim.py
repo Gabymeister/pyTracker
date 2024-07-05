@@ -35,7 +35,7 @@ from collections import namedtuple
 
 
 import ROOT
-import joblib
+# import joblib
 import numpy as np
 
 # sys.path.append("..")
@@ -51,6 +51,18 @@ import tracker.datatypes as datatypes
 #     Track = namedtuple("Track", ["x0", "y0", "z0", "t0", "Ax", "Ay", "Az", "At", "cov", "chi2", "ind", "hits", "hits_filtered"])
 #     Vertex = namedtuple("Vertex", ["x0", "y0", "z0", "t0", "cov", "chi2", "tracks"])
 #     VertexSeed = namedtuple("VertexSeed",["x0", "y0", "z0", "t0",  "cov", "chi2","dist", "Ntracks", "trackind1","trackind2", "score"])
+
+
+
+det_width        = 3.5 # 4.5cm per bar
+det_height       = 1 # [cm]
+time_resolution  = 1 # [ns], single channel
+refraction_index = 1.58
+
+unc_trans = det_width/math.sqrt(12)                  
+unc_long = time_resolution*29.979/math.sqrt(2)/refraction_index
+unc_time = time_resolution/math.sqrt(2) # ns
+unc_thick = det_height/math.sqrt(12) # uncertainty in thickness, cm
 
 
 
@@ -70,6 +82,16 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
     entries_run = [start_event, min(end_event, entries)]
     print("  Entries to read:", entries_run)
     
+    # Tell the version of the data
+    if 'Digi_bar_direction' in branches:
+        version = 1
+    else:
+        version = 0
+        
+    # version = 0
+        
+        
+    
 
     # Make a dictionary
     data = {
@@ -85,12 +107,23 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
         for key in data:
             data[key].append([])
 
-        hits = root_hits_extractor(Tree, entry)
+        hits = root_hits_extractor(Tree, entry, version)
+        
+        # Group the hits into layer groups
         for hit in hits:
-            if  hit.layer<=1 or hit.layer>5:
+            
+            # if  hit.layer<=1 or hit.layer>5:
+            #     data["inactive"][-1].append(hit)            
+            # elif hit.layer<=5:
+            #     data["1"][-1].append(hit)
+            
+            if  hit.layer<=3: # Two wall and two floor layers
                 data["inactive"][-1].append(hit)            
-            elif hit.layer<=5:
-                data["1"][-1].append(hit)
+            elif hit.layer<=7: # Top 4 celling tracking layers
+                
+                data["1"][-1].append(hit)  
+            elif hit.layer<=11: #  4 wall tracking layers
+                data["2"][-1].append(hit)                  
 
     print("Finished loading file")
 
@@ -107,9 +140,9 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
 
 def dump(data, filename):
     
-    # with open(output_filename,"wb") as f:
-    #     pickle.dump(results, f)    
-    joblib.dump(data,filename+".joblib")
+    with open(output_filename,"wb") as f:
+        pickle.dump(results, f)    
+    # joblib.dump(data,filename+".joblib")
 
 def exists(filename):
     return os.path.exists(filename+".joblib")
@@ -136,40 +169,54 @@ def get_tree(tfile):
     
     return Tree    
     
-
 def c2list(x):
     return [x.at(i) for i in range(x.size())]
 
+
+
+
+
 def make_hits(x, y, z, t, ylayers):
-    Y_LAYERS = ylayers
-    det_width  = 4.5 # 4.5cm per bar
-    det_height = 1 #[cm]
-    time_resolution = 1 #[ns], single channel
-    refraction_index = 1.58
-    
-    unc_trans = det_width/math.sqrt(12)                  
-    unc_long = time_resolution*29.979/math.sqrt(2)/refraction_index
-    UNC_T = time_resolution/math.sqrt(2) # ns
-    UNC_Y = det_height/math.sqrt(12) # uncertainty in thickness, cm
-    
-
     hits=[]
-    for i, layer in enumerate(Y_LAYERS):
+    for i, layer in enumerate(ylayers):
         if layer%2==1:
-            hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_trans, UNC_Y, unc_long, UNC_T, layer, i))
+            hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_trans, unc_thick, unc_long, unc_time, layer, i, 0))
         else:
-            hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_long, UNC_Y, unc_trans, UNC_T, layer, i))         
+            hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc_long, unc_thick, unc_trans, unc_time, layer, i, 0))         
             
-    return hits    
+    return hits  
 
-def root_hits_extractor(Tree, entry):
+def make_hits_newsim(x, y, z, t, layer_id, layer_direction, bar_direction, det_id):
+    hits=[]
+    # layer_direction_mod ={0:1, 1:2, 2:0}
+    
+    for i, layer in enumerate(layer_id):
+        unc = [0,0,0]
+        other_direction = 0+1+2-layer_direction[i]-bar_direction[i]
+        unc[layer_direction[i]] = unc_thick
+        unc[bar_direction[i]] = unc_long
+        unc[other_direction] = unc_trans
+        hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc[0], unc[1], unc[2], unc_time, layer, i,det_id[i]))
+            
+    return hits 
+
+def root_hits_extractor(Tree, entry, version):
     Tree.GetEntry(entry)
     Digi_x = c2list(Tree.Digi_x)
     Digi_y = c2list(Tree.Digi_y)
     Digi_z = c2list(Tree.Digi_z)
     Digi_t = c2list(Tree.Digi_time)
     Digi_layer = c2list(Tree.Digi_layer_id)
-    return make_hits(Digi_x, Digi_y, Digi_z, Digi_t, Digi_layer)
+    
+    if version==0:
+        return make_hits(Digi_x, Digi_y, Digi_z, Digi_t, Digi_layer)
+    elif version==1:
+        Digi_layer_direction = c2list(Tree.Digi_layer_direction)
+        Digi_bar_direction = c2list(Tree.Digi_bar_direction)
+        Digi_det_id = c2list(Tree.Digi_det_id)
+        return make_hits_newsim(Digi_x, Digi_y, Digi_z, Digi_t, Digi_layer, Digi_layer_direction, Digi_bar_direction, Digi_det_id)
+        
+        
 
 
 from types import ModuleType, FunctionType

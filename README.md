@@ -35,29 +35,43 @@ cd pyTracker
 pip install -e .  --user
 ```
 
+To run any program with the singularity image, use the follwing syntax (after running the module use and module load commands above):
+
+```bash
+singularity exec $SCDMS_IMAGE executable arguments...
+```
+
 
 ## Usage
 
-The main program is tracker/run.py, which will run the track and vertex finding and reconstruction.
+The main program is tracker/run.py, which will run the track and vertex finding and reconstruction. The main program can be run by passing the filename to python: 
+
+    (singularity exec $SCDMS_IMAGE) python3 /path/to/tracker/run.py
+
+The content in the bracket is for using CDMS singularity image.
 
 Once installed, the program can be run directly with the format of
 
-    pytracker [-h] [--output_suffix OUTPUT_SUFFIX] [--io IO] [--config CONFIG] [--printn PRINTN] [--debug] [--overwrite] input_filename output_directory  
+    (singularity exec $SCDMS_IMAGE) pytracker [-h] [--output_suffix OUTPUT_SUFFIX] [--io IO] [--config CONFIG] [--printn PRINTN] [--debug] [--overwrite] input_filename output_directory  
     
     positional arguments:
-    input_filename        Path: input filename
-    output_directory      Path: output directory
+        input_filename        Path: input filename
+        output_directory      Path: output directory
 
     options:
-    -h, --help            show this help message and exit
-    --output_suffix OUTPUT_SUFFIX
-                            Path: (optional) suffix to the output filename
-    --io IO               IO module to parse the input file. Default is io_MuSim in ./io_user/. Provide the full path if the IO file is not under ./io_user/
-    --config CONFIG       Path: configuration file. Default configuration (config_defaut.py) will be used if no config file is provided.
-    --printn PRINTN       Print every [printn] event
-    --debug               Show debug info
-    --overwrite           Overwrite the existing output file
+        -h, --help            show this help message and exit
+        --output_suffix OUTPUT_SUFFIX
+                                Path: (optional) suffix to the output filename
+        --io IO               IO module to parse the input file. Default is io_MuSim in ./io_user/. Provide the full path if the IO file is not under ./io_user/
+        --config CONFIG       Path: configuration file. Default configuration (config_defaut.py) will be used if no config file is provided.
+        --printn PRINTN       Print every [printn] event
+        --debug               Show debug info
+        --overwrite           Overwrite the existing output file
 
+Example:  
+    
+    (singularity exec $SCDMS_IMAGE) pytracker -h : this will show the help information  
+    (singularity exec $SCDMS_IMAGE) pytracker INPUT_FILENAME OUTPUT_DIR
 
 ## Technical details
 
