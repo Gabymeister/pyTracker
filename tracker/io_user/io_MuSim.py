@@ -84,12 +84,11 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
     
     # Tell the version of the data
     if 'Digi_bar_direction' in branches:
-        version = 1
+        version = 1  # Simulation as of 2024-05
+    elif 'hit_energy1' in branches:
+        version = 2  # UofT test stand data
     else:
-        version = 0
-        
-    # version = 0
-        
+        version = 0  # Simulation before 2024-05
         
     
 
@@ -112,18 +111,23 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
         # Group the hits into layer groups
         for hit in hits:
             
-            # if  hit.layer<=1 or hit.layer>5:
-            #     data["inactive"][-1].append(hit)            
-            # elif hit.layer<=5:
-            #     data["1"][-1].append(hit)
+            if version==0:
+                if  hit.layer<=1 or hit.layer>5:
+                    data["inactive"][-1].append(hit)            
+                elif hit.layer<=5:
+                    data["1"][-1].append(hit)
             
-            if  hit.layer<=3: # Two wall and two floor layers
-                data["inactive"][-1].append(hit)            
-            elif hit.layer<=7: # Top 4 celling tracking layers
-                
-                data["1"][-1].append(hit)  
-            elif hit.layer<=11: #  4 wall tracking layers
-                data["2"][-1].append(hit)                  
+            elif version==1:
+                if  hit.layer<=3: # Two wall and two floor layers
+                    data["inactive"][-1].append(hit)            
+                elif hit.layer<=7: # Top 4 celling tracking layers
+                    data["1"][-1].append(hit)  
+                elif hit.layer<=11: #  4 wall tracking layers
+                    data["2"][-1].append(hit)  
+                    
+            elif version==2:
+                if  hit.layer<=4: # Two wall and two floor layers
+                    data["1"][-1].append(hit)            
 
     print("Finished loading file")
 
@@ -200,22 +204,52 @@ def make_hits_newsim(x, y, z, t, layer_id, layer_direction, bar_direction, det_i
             
     return hits 
 
+def make_hits_teststand(Digi_x, Digi_y, Digi_z, Digi_t, Digi_x_err, Digi_y_err, Digi_z_err, Digi_t_err, Digi_layer, Digi_det_id):
+    hits=[]
+    # layer_direction_mod ={0:1, 1:2, 2:0}
+    
+    for i in range(len(x)):
+        hits.append(datatypes.Hit(Digi_x[i], Digi_y[i], Digi_z[i], Digi_t[i], Digi_x_err[i], Digi_y_err[i], Digi_z_err[i], Digi_t_err[i], Digi_layer[i], i, Digi_det_id[i], 1))
+            
+    return hits 
+
+
+
 def root_hits_extractor(Tree, entry, version):
     Tree.GetEntry(entry)
-    Digi_x = c2list(Tree.Digi_x)
-    Digi_y = c2list(Tree.Digi_y)
-    Digi_z = c2list(Tree.Digi_z)
-    Digi_t = c2list(Tree.Digi_time)
-    Digi_layer = c2list(Tree.Digi_layer_id)
     
     if version==0:
+        Digi_x = c2list(Tree.Digi_x)
+        Digi_y = c2list(Tree.Digi_y)
+        Digi_z = c2list(Tree.Digi_z)
+        Digi_t = c2list(Tree.Digi_time)
+        Digi_layer = c2list(Tree.Digi_layer_id)        
         return make_hits(Digi_x, Digi_y, Digi_z, Digi_t, Digi_layer)
     elif version==1:
+        Digi_x = c2list(Tree.Digi_x)
+        Digi_y = c2list(Tree.Digi_y)
+        Digi_z = c2list(Tree.Digi_z)
+        Digi_t = c2list(Tree.Digi_time)
+        Digi_layer = c2list(Tree.Digi_layer_id)          
         Digi_layer_direction = c2list(Tree.Digi_layer_direction)
         Digi_bar_direction = c2list(Tree.Digi_bar_direction)
         Digi_det_id = c2list(Tree.Digi_det_id)
         Digi_type = c2list(Tree.Digi_type)
         return make_hits_newsim(Digi_x, Digi_y, Digi_z, Digi_t, Digi_layer, Digi_layer_direction, Digi_bar_direction, Digi_det_id, Digi_type)
+    
+    # UofT test stand
+    elif version==2:
+        Digi_x = c2list(Tree.hit_x)
+        Digi_y = c2list(Tree.hit_y)
+        Digi_z = c2list(Tree.hit_z)
+        Digi_t = c2list(Tree.hit_t)
+        Digi_x_err = c2list(Tree.hit_x_err)
+        Digi_y_err = c2list(Tree.hit_y_err)
+        Digi_z_err = c2list(Tree.hit_z_err)
+        Digi_t_err = c2list(Tree.hit_t_err)        
+        Digi_layer = c2list(Tree.hit_layer)          
+        Digi_det_id = c2list(Tree.hit_det_id)
+        return make_hits_teststand(Digi_x, Digi_y, Digi_z, Digi_t, Digi_x_err, Digi_y_err, Digi_z_err, Digi_t_err, Digi_layer, Digi_det_id)    
         
         
 
