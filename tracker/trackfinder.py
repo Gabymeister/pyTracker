@@ -158,11 +158,7 @@ class TrackFinder:
                 self.remove_related_hits_seeds(hits_found)
                 hits_found_all.extend(hits_found)  
                                  
-                # print("track found inds", [hit.ind for hit in hits_found])
-                # print("remaining hits")
-                # for layer in self.hits_grouped:
-                #     print('layer:', layer)
-                #     print([hit.ind for hit in self.hits_grouped[layer]])
+
             # Remove hits that are already added to track
             hit_found_inds.extend([hit.ind for hit in hits_found_all])
             hit_found_inds.sort(reverse=True)
@@ -234,7 +230,7 @@ class TrackFinder:
         seeds=[]
         for i in range(len(hits)):
             for j in range(i+1, len(hits)):
-                if hits[i].y == hits[j].y:
+                if (hits[i].y == hits[j].y) or (hits[i].layer == hits[j].layer):
                     continue
                 if hits[i].ind in used_index   or  hits[j].ind in used_index:
                     continue
@@ -266,7 +262,7 @@ class TrackFinder:
         seed_start_layer = seed_hits[0].layer
         seed_stop_layer  = seed_hits[1].layer        
         # Check if needed to find backward or forward
-        if (seed_hits[0].y > seed_hits[1].y):
+        if (seed_hits[0].layer > seed_hits[1].layer):
             TRACK_DIRECTION = 0 # Downward track
             FIND_BACKWARD_LAYERS = LAYERS[np.argmax(LAYERS>seed_stop_layer):]     
         else:
@@ -311,10 +307,10 @@ class TrackFinder:
             if max(LAYERS)==seed_hits[1].layer:
                 return hits_found, chi2_found
 
-            if (seed_hits[0].y > seed_hits[1].y):
+            if (seed_hits[0].layer > seed_hits[1].layer):
                 FIND_FORWARD_LAYERS = LAYERS[:np.argmax(LAYERS>seed_hits[1].layer)-1][::-1]
             else:
-                FIND_FORWARD_LAYERS  = LAYERS[np.argmax(LAYERS>seed_hits[1].layer):]            
+                FIND_FORWARD_LAYERS  = LAYERS[np.argmax(LAYERS>seed_hits[1].layer):] 
 
             kf_find = KF.KalmanFilterFind()
             kf_find.init_filter(*Util.track.init_state(seed_hits)) # Set initial state using two hits specified by the seed

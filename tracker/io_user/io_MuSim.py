@@ -81,11 +81,12 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
     if end_event==-1: end_event = entries
     entries_run = [start_event, min(end_event, entries)]
     print("  Entries to read:", entries_run)
+    print("  Branches", branches)
     
     # Tell the version of the data
     if 'Digi_bar_direction' in branches:
         version = 1  # Simulation as of 2024-05
-    elif 'hit_energy1' in branches:
+    elif 'hit_nrg1' in branches:
         version = 2  # UofT test stand data
     else:
         version = 0  # Simulation before 2024-05
@@ -93,11 +94,14 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
     
 
     # Make a dictionary
-    data = {
-        "inactive":[],
-        "1":[],
-        "2":[],
-    }
+    data_keys=["inactive"]
+    if version==0:
+        data_keys = ["inactive", "1"]
+    elif version==1:
+        data_keys = ["inactive", "1", "2"]
+    elif version==2:
+        data_keys = ["inactive", "1"]                
+    data = {key:[] for key in data_keys}
 
     # Read the file
     for entry in range(*entries_run):
@@ -133,8 +137,12 @@ def load(filename, printn=2000, start_event=0, end_event=-1, *args, **kwargs):
 
     # Make metadata
     metadata={"groups":{}}
-    metadata["groups"]["1"] = {"flip_index":None}
-    metadata["groups"]["2"] = {"flip_index":[1,2]}
+    if version==1:
+        metadata["groups"]["1"] = {"flip_index":None}
+        metadata["groups"]["2"] = {"flip_index":[1,2]}
+    elif version==2:
+        metadata["groups"]["1"] = {"flip_index":[1,2]}
+
 
     # size = getsize(data)
     # print(f"Memory usage of loaded data {size/1e6:.2f} [MB]")
@@ -208,7 +216,7 @@ def make_hits_teststand(Digi_x, Digi_y, Digi_z, Digi_t, Digi_x_err, Digi_y_err, 
     hits=[]
     # layer_direction_mod ={0:1, 1:2, 2:0}
     
-    for i in range(len(x)):
+    for i in range(len(Digi_x)):
         hits.append(datatypes.Hit(Digi_x[i], Digi_y[i], Digi_z[i], Digi_t[i], Digi_x_err[i], Digi_y_err[i], Digi_z_err[i], Digi_t_err[i], Digi_layer[i], i, Digi_det_id[i], 1))
             
     return hits 
