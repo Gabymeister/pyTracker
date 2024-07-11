@@ -208,7 +208,7 @@ def make_hits_newsim(x, y, z, t, layer_id, layer_direction, bar_direction, det_i
         unc[layer_direction[i]] = unc_thick
         unc[bar_direction[i]] = unc_long
         unc[other_direction] = unc_trans
-        hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc[0], unc[1], unc[2], unc_time, layer, i,det_id[i], digi_type))
+        hits.append(datatypes.Hit(x[i], y[i], z[i], t[i], unc[0], unc[1], unc[2], unc_time, layer, i,det_id[i], digi_type[i]))
             
     return hits 
 
